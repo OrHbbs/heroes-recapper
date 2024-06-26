@@ -2,6 +2,8 @@ from heroprotocol.versions import protocol92264 as protocol
 from datetime import datetime, timedelta
 import json
 
+from utils import default_wanted_keys
+
 
 def get_match_type(match_type):
     pass
@@ -32,21 +34,27 @@ def get_datetime(utc_time):
     return str(dt)
 
 
-def get_player_data(data, num_players):
+def get_player_data(unfiltered_data, num_players, wanted_keys=default_wanted_keys):
     """
 
-    :param data: the dict of data from replay.tracker.events
+    :param wanted_keys: a list of the keys that should be parsed from the data. The default values to obtain is 
+    defined in utils.py. Modify or create a new list of strings if you want to process more or less columns of data 
+    :param num_players: this should usually be 10 
+    :param unfiltered_data: the dict of data from replay.tracker.events 
     :return: a dictionary containing player details of all the players in the match
     """
 
     all_player_details = [{} for _ in range(num_players)]
 
-    for instance in data['m_instanceList']:
+    for instance in unfiltered_data['m_instanceList']:
         metric_name = instance['m_name']
 
-        for i, value_list in enumerate(instance['m_values']):
-            if i < num_players:
-                all_player_details[i][metric_name] = value_list[0]['m_value']
+        if metric_name in wanted_keys:
+
+            for i, value_list in enumerate(instance['m_values']):
+                if i < num_players:
+                    if value_list:
+                        all_player_details[i][metric_name] = value_list[0]['m_value']
 
     return all_player_details
 
@@ -64,6 +72,10 @@ def parse_replay(src, create_json=True):
     print(module_name)
 
     details = protocol.decode_replay_details(mpyq.read_file('replay.details'))
+    tracker_events = protocol.decode_replay_tracker_events(
+        mpyq.read_file('replay.tracker.events')
+    )
+
     player_list = details['m_playerList']
 
     del details['m_playerList']
@@ -72,7 +84,7 @@ def parse_replay(src, create_json=True):
         'rawDate': details['m_timeUTC'],
         'date': get_datetime(details['m_timeUTC']),
         'map': get_as_str(details['m_title'])
-
+        # 'winner': get_as_str(tracker_events)
     }
 
     players = []
@@ -86,16 +98,12 @@ def parse_replay(src, create_json=True):
             'name': player['m_name'],
             'hero': player['m_hero'],
             'result': player['m_result'],
-            'team': player['m_teamId']
+            # 'team': player['m_teamId']
         }
 
         players.append(player_output)
 
     output['players'] = players
-
-    tracker_events = protocol.decode_replay_tracker_events(
-        mpyq.read_file('replay.tracker.events')
-    )
 
     events_data = {}
 
@@ -110,7 +118,7 @@ def parse_replay(src, create_json=True):
     game_stats = get_player_data(events_data, len(player_list))
 
     for i in range(len(player_list)):
-        output['players'][i].update(game_stats[0])
+        output['players'][i].update(game_stats[i])
 
     if create_json:
         with open('data.json', 'w', encoding='utf-8') as f:
@@ -118,5 +126,5 @@ def parse_replay(src, create_json=True):
 
     return output
 
+# data = parse_replay('sky.StormReplay')
 
-parse_replay('sky.StormReplay')

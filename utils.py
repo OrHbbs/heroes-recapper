@@ -1,0 +1,11 @@
+default_wanted_keys = ['Takedowns', 'Deaths', 'TownKills', "SoloKill", 'Assists', 'MetaExperience', "Level",
+                       'TeamTakedowns', 'ExperienceContribution', 'Healing', "SiegeDamage", "StructureDamage",
+                       'MinionDamage', 'HeroDamage', 'MercCampCaptures', 'SelfHealing', 'TimeSpentDead',
+                       'TimeCCdEnemyHeroes', 'CreepDamage', 'SummonDamage', 'Tier1Talent', 'Tier2Talent', 'Tier3Talent',
+                       'Tier4Talent', 'Tier5Talent', 'Tier6Talent', 'Tier7Talent', 'DamageTaken', 'DamageSoaked',
+                       'HighestKillStreak', 'ProtectionGivenToAllies', 'TimeSilencingEnemyHeroes',
+                       'TimeRootingEnemyHeroes', 'TimeStunningEnemyHeroes', 'ClutchHealsPerformed',
+                       'EscapesPerformed', 'VengeancesPerformed', 'TeamfightEscapesPerformed', 'OutnumberedDeaths',
+                       'TeamfightHealingDone', 'TeamfightDamageTaken', 'TeamfightHeroDamage', 'OnFireTimeOnFire',
+                       'TimeOnPoint', 'CageUnlocksInterrupted', 'PhysicalDamage', 'SpellDamage', 'Multikill',
+                       'MinionKills', 'RegenGlobes', 'TimeInTemple']

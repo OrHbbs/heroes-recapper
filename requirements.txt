@@ -1,0 +1,4 @@
+heroprotocol==2.55.4.91756
+mpyq==0.2.5
+pandas==2.2.2
+sv_ttk==2.6.0

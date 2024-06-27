@@ -1,3 +1,5 @@
+//included this just for reference, don't use
+
 export interface StormReplay {
     "match": {
         "version": {

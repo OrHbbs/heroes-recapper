@@ -2,29 +2,14 @@ from heroprotocol.versions import protocol92264 as protocol
 from datetime import datetime, timedelta
 import json
 
-from utils import default_wanted_keys
+from utils import default_wanted_keys, get_as_str
 
 
-def get_match_type(match_type):
+def get_match_type(match_type: int):
     pass
 
 
-def get_as_str(val):
-    """
-    :param val: a dictionary, list, byte, string, integer, or any combination of these
-    :return: the same parameter except recursively turned into a string
-    """
-    if isinstance(val, dict):
-        return {k: get_as_str(v) for k, v in val.items()}
-    elif isinstance(val, list):
-        return [get_as_str(i) for i in val]
-    elif isinstance(val, bytes):
-        return val.decode('utf-8')
-    else:
-        return str(val)
-
-
-def get_datetime(utc_time):
+def get_datetime(utc_time: int):
     # assuming time in nanoseconds
     # todo this assumption is wrong
     sec = utc_time / 1_000_000_000
@@ -34,13 +19,12 @@ def get_datetime(utc_time):
     return str(dt)
 
 
-def get_player_data(unfiltered_data, num_players, wanted_keys=default_wanted_keys):
+def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[str] = default_wanted_keys):
     """
-
-    :param wanted_keys: a list of the keys that should be parsed from the data. The default values to obtain is 
-    defined in utils.py. Modify or create a new list of strings if you want to process more or less columns of data 
-    :param num_players: this should usually be 10 
-    :param unfiltered_data: the dict of data from replay.tracker.events 
+    :param num_players: this should usually be 10
+    :param unfiltered_data: the dict of data from replay.tracker.events
+    :param wanted_keys: a list of the keys that should be parsed from the data. The default values are defined in
+    utils.py. Modify or create a new list of strings if you want to process more or less columns of data
     :return: a dictionary containing player details of all the players in the match
     """
 
@@ -59,10 +43,10 @@ def get_player_data(unfiltered_data, num_players, wanted_keys=default_wanted_key
     return all_player_details
 
 
-def parse_replay(src, create_json=True):
+def parse_replay(path: str, create_json: bool = True):
     import mpyq
 
-    mpyq = mpyq.MPQArchive(src)
+    mpyq = mpyq.MPQArchive(path)
 
     header = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
     build_number = header['m_version']['m_baseBuild']
@@ -72,9 +56,8 @@ def parse_replay(src, create_json=True):
     print(module_name)
 
     details = protocol.decode_replay_details(mpyq.read_file('replay.details'))
-    tracker_events = protocol.decode_replay_tracker_events(
-        mpyq.read_file('replay.tracker.events')
-    )
+    tracker_events = protocol.decode_replay_tracker_events(mpyq.read_file('replay.tracker.events'))
+    header_info = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
 
     player_list = details['m_playerList']
 
@@ -85,6 +68,10 @@ def parse_replay(src, create_json=True):
         'date': get_datetime(details['m_timeUTC']),
         'map': get_as_str(details['m_title'])
         # 'winner': get_as_str(tracker_events)
+        # 'leftTakedowns':
+        # 'rightTakedowns':
+        # 'firstToTen':
+        # 'firstFort':
     }
 
     players = []
@@ -125,6 +112,3 @@ def parse_replay(src, create_json=True):
             json.dump(output, f, ensure_ascii=False, indent=4)
 
     return output
-
-# data = parse_replay('sky.StormReplay')
-

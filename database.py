@@ -23,7 +23,6 @@ def check_duplicate(df: pd.DataFrame, column_name: str, entry: int) -> bool:
     low, high = 0, len(df) - 1
 
     while low <= high:
-        print(f"low: {low}, high: {high}")
         mid = (low + high) // 2
         mid_value = df.iloc[mid][column_name]
 
@@ -32,7 +31,6 @@ def check_duplicate(df: pd.DataFrame, column_name: str, entry: int) -> bool:
         elif mid_value > entry:
             high = mid - 1
         else:
-            # entry found
             print("duplicate found")
             return True
 
@@ -63,16 +61,25 @@ def add_to_database(paths: list[str], matches_database: pd.DataFrame, create_jso
     parsed_replays = []
 
     for path in paths:
+        if not path.endswith(".StormReplay"):
+            print("unexpected file")
+            continue
         data = get_match_data.parse_replay(path=path, create_json=create_json)
 
         match_data = {
             "rawDate": data["rawDate"],
             "date": data["date"],
-            "map": data["map"]
+            "map": data["map"],
+            "duration": data["duration"],
+            "levelRed": data["players"][0]["Level"],
+            "levelBlue": data["players"][-1]["Level"]
         }
 
+        for each_player in data['players']:
+            del each_player['Level']
+
         #todo This doesn't check for duplicates within the paths parameter.
-        # It's possible that two files can have the exact same replay data
+        # It's possible that different two files can have the exact same replay data
         if check_duplicate(matches_database, "rawDate", match_data["rawDate"]):
             continue
 

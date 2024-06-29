@@ -1,6 +1,8 @@
 from heroprotocol.versions import protocol92264 as protocol
 from datetime import datetime, timedelta
 import json
+from itertools import islice
+import time
 
 from utils import default_wanted_keys, get_as_str
 
@@ -28,7 +30,16 @@ def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[s
     :return: a dictionary containing player details of all the players in the match
     """
 
-    all_player_details = [{} for _ in range(num_players)]
+    details = {
+        "duration": None,
+        "player_details": [{} for _ in range(num_players)]
+    }
+
+    for instance in unfiltered_data['m_instanceList']:
+        for value_list in instance['m_values']:
+            if value_list:
+                details["duration"] = value_list[0]['m_time']
+                break
 
     for instance in unfiltered_data['m_instanceList']:
         metric_name = instance['m_name']
@@ -38,9 +49,9 @@ def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[s
             for i, value_list in enumerate(instance['m_values']):
                 if i < num_players:
                     if value_list:
-                        all_player_details[i][metric_name] = value_list[0]['m_value']
+                        details['player_details'][i][metric_name] = value_list[0]['m_value']
 
-    return all_player_details
+    return details
 
 
 def parse_replay(path: str, create_json: bool = True):
@@ -63,15 +74,17 @@ def parse_replay(path: str, create_json: bool = True):
 
     del details['m_playerList']
 
+    # print(tracker_events)
+
     output = {
         'rawDate': details['m_timeUTC'],
         'date': get_datetime(details['m_timeUTC']),
-        'map': get_as_str(details['m_title'])
-        # 'winner': get_as_str(tracker_events)
-        # 'leftTakedowns':
-        # 'rightTakedowns':
+        'map': get_as_str(details['m_title']),
+        # 'winner': get_as_str(tracker_events),
+        'duration': None,
         # 'firstToTen':
         # 'firstFort':
+        #
     }
 
     players = []
@@ -104,11 +117,18 @@ def parse_replay(path: str, create_json: bool = True):
 
     game_stats = get_player_data(events_data, len(player_list))
 
+    #todo game time is different on heroesprofile and stats of the storm, which one is correct?
+    output['duration'] = game_stats['duration']
+
     for i in range(len(player_list)):
-        output['players'][i].update(game_stats[i])
+        output['players'][i].update(game_stats['player_details'][i])
 
     if create_json:
         with open('data.json', 'w', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False, indent=4)
+
+    if True:
+        with open('more-data.json', 'a', encoding='utf-8') as f:
             json.dump(output, f, ensure_ascii=False, indent=4)
 
     return output

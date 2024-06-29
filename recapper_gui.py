@@ -1,3 +1,5 @@
+import datetime
+import os
 import tkinter as tk
 from tkinter import ttk, Menu, filedialog
 import pandas as pd
@@ -5,22 +7,27 @@ import numpy as np
 import sv_ttk
 from PIL import Image, ImageDraw, ImageTk
 
+import database
 from database import add_to_database
-from utils import clean_string, test_paths
+from utils import clean_string, test_paths, get_winner
 
 
-def create_circular_image(image_path: str):
+def create_circular_image(image_path: str, border_color: str = "black", border_width: int = 2):
     img = Image.open(image_path).resize((50, 50), Image.LANCZOS).convert("RGBA")
+
     mask = Image.new("L", img.size, 0)
     draw = ImageDraw.Draw(mask)
-    draw.ellipse((0, 0, img.size[0], img.size[1]), fill=255)
-    img.putalpha(mask)
-    return ImageTk.PhotoImage(img)
+    draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
+    bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    border_draw = ImageDraw.Draw(bordered_img)
+    border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
+    border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width),
+                        fill=(0, 0, 0, 0))
 
-def get_winner(side: int):
-    if side == 1:
-        return "blue"
-    return "red"
+    bordered_img.paste(img, (0, 0), mask=mask)
+
+    return ImageTk.PhotoImage(bordered_img)
+
 
 class RecapperGui:
 
@@ -38,9 +45,20 @@ class RecapperGui:
         self.root.geometry("1200x400")
 
         replays = test_paths
-        newDF = pd.DataFrame()
-        self.database = add_to_database(replays, newDF)
+        self.database = pd.DataFrame()
+
+        try:
+            self.database = database.load_from_pickle("new_pickle.pkl")
+        except FileNotFoundError:
+            pass
+
+        self.limit = 0
+        self.set_limit()
+
+        # self.database = add_to_database(paths=["test-data/infernal.StormReplay", "test-data/sample0.StormReplay"], matches_database=newDF)
         self.create_widgets()
+
+        print(database)
 
     def create_widgets(self):
         self.create_menu()
@@ -55,11 +73,10 @@ class RecapperGui:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.main_canvas.configure(yscrollcommand=scrollbar.set)
-        self.main_canvas.bind('<Configure>', lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
+        self.main_canvas.bind('<Configure>',
+                              lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
 
-        limit = min(20, len(self.database.index))
-
-        for i in range(limit):
+        for i in range(self.limit):
             self.show_row(i)
 
     def create_menu(self):
@@ -71,7 +88,7 @@ class RecapperGui:
         file_menu.add_command(label="Select Replay", command=self.select_replay)
         file_menu.add_command(label="Select Directory", command=self.select_directory)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
+        file_menu.add_command(label="Exit", command=self.exit_app)
 
         settings_menu = Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Settings", menu=settings_menu)
@@ -79,35 +96,47 @@ class RecapperGui:
 
         about_menu = Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="About", menu=about_menu)
-        about_menu.add_cascade(label="About", menu=settings_menu)
+        about_menu.add_cascade(label="About")
 
         help_menu = Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="quick guide", command=self.open_help_menu)
 
+    def set_limit(self):
+        self.limit = min(20, len(self.database.index))
+        print(self.limit)
+
+    def exit_app(self):
+        database.save_to_pickle("new_pickle.pkl", self.database)
+        print(self.database)
+        root.destroy()
+
     def select_replay(self):
         file_path = filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])
         if file_path:
-            self.display_replays(file_path)
+            self.database = add_to_database(paths=[file_path], matches_database=self.database)
 
-    # todo
+        self.refresh_rows()
+        self.root.update_idletasks()
+
     def select_directory(self):
         file_path = filedialog.askdirectory()
+        paths = []
+
+        for root, dirs, files in os.walk(file_path):
+            for file in files:
+                if file.endswith(".StormReplay"):
+                    paths.append(os.path.join(root, file))
+
+        self.database = database.add_to_database(paths=paths, matches_database=self.database)
+        self.refresh_rows()
+        self.root.update_idletasks()
+
         return
 
     # todo opens a sub-window with a slideshow on how to use basic features
     def open_help_menu(self):
         pass
-
-    # todo
-    def display_replays(self, replays):
-        pass
-
-    def show_hero_icon(self, hero_name, row_number):
-        self.image = tk.PhotoImage(file="heroes-talents/images/heroes/alarak.png")
-
-        self.label = tk.Label(self.root, image=self.image)
-        self.label.pack()
 
     def show_row(self, row_number):
 
@@ -117,7 +146,8 @@ class RecapperGui:
         text_widget = tk.Text(sub_frame, wrap="word", height=5, width=50)
         text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         text_widget.insert(tk.END, self.database['map'][row_number] + "\n")
-        text_widget.insert(tk.END, get_winner(self.database['1_result'][row_number]))
+        text_widget.insert(tk.END, get_winner(self.database['1_result'][row_number]) + "\n")
+        text_widget.insert(tk.END, str(datetime.timedelta(seconds=int(self.database['duration'][row_number]) - 45)))
         text_widget.pack(side=tk.LEFT, padx=10)
         image_container = tk.Frame(sub_frame)
         image_container.pack(side=tk.LEFT, padx=10)
@@ -125,12 +155,28 @@ class RecapperGui:
         for i in range(10):
             self.show_hero_icon(image_container, row_number, i)
 
+    def refresh_rows(self):
+        self.set_limit()
+
+        for widget in self.main_canvas.winfo_children():
+            widget.destroy()
+
+        for i in range(self.limit):
+            self.show_row(i)
+
+        print(self.database)
+
     def show_hero_icon(self, container, row_number, index):
         hero_name = clean_string(self.database[f"{index + 1}_hero"][row_number])
         image_path = f"heroes-talents/images/heroes/{hero_name}.png"
-        circular_image = create_circular_image(image_path)
 
-        image_button = tk.Button(container, image=circular_image, command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='0')
+        border_color = "blue"
+        if index >= 5:
+            border_color = "red"
+        circular_image = create_circular_image(image_path, border_color=border_color)
+
+        image_button = tk.Button(container, image=circular_image,
+                                 command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='0')
         image_button.image = circular_image
         image_button.pack(side=tk.LEFT, padx=10)
 

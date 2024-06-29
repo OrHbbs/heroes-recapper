@@ -44,3 +44,9 @@ def get_as_str(val):
         return val.decode('utf-8')
     else:
         return str(val)
+
+
+def get_winner(side: int):
+    if side == 1:
+        return "blue"
+    return "red"

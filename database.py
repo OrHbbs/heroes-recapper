@@ -1,5 +1,6 @@
 import math
 
+from sortedcontainers import SortedDict
 import pandas as pd
 import get_match_data
 import time
@@ -39,8 +40,6 @@ def check_duplicate(df: pd.DataFrame, column_name: str, entry: int) -> bool:
 
 def sort_dataframe(df: pd.DataFrame, column: str):
     """
-    Should only be used as a last resort. Data should be inserted into the correct position as the replays are processed
-
     :param df: dataframe
     :param column:
     :return:

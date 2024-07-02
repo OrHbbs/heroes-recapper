@@ -48,5 +48,5 @@ def get_as_str(val):
 
 def get_winner(side: int):
     if side == 1:
-        return "blue"
-    return "red"
+        return "Blue"
+    return "Red"

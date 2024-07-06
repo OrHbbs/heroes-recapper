@@ -99,6 +99,59 @@ def add_to_database(paths: list[str], matches_database: pd.DataFrame, create_jso
     return matches_database
 
 
+def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: bool = False):
+
+    for path in paths:
+        if not path.endswith(".StormReplay"):
+            print("unexpected file")
+            continue
+        data = get_match_data.parse_replay(path=path, create_json=create_json, check_duplicate=True, sorted_dict=sorted_dict)
+
+        if len(data) == 0:
+            continue
+
+        raw_date = data["rawDate"]
+
+        if raw_date not in sorted_dict:
+
+            match_data = {
+                "rawDate": raw_date,
+                "date": data["date"],
+                "map": data["map"],
+                "duration": data["duration"],
+                "gameMode": data["gameMode"],
+                "levelRed": data["players"][0]["Level"],
+                "levelBlue": data["players"][-1]["Level"]
+            }
+
+            for each_player in data['players']:
+                del each_player['Level']
+
+            player_data_combined = {}
+
+            for i, player_data in enumerate(data['players']):
+                for key, value in player_data.items():
+                    player_data_combined[f"{i + 1}_{key}"] = value
+
+            match_data.update(player_data_combined)
+
+            # print(match_data)
+
+            sorted_dict[match_data["rawDate"]] = match_data
+
+            # del match_data["rawDate"]
+
+    return sorted_dict
+
+
+# maybe this is inefficient
+def get_nth_value(sorted_dict: SortedDict, i: int):
+    if i < 0 or i >= len(sorted_dict):
+        raise IndexError("Index out of range")
+    keys = list(sorted_dict.keys())
+    key = keys[i]
+    return sorted_dict[key]
+
 def save_to_pickle(path, matches_database):
     matches_database.to_pickle(path)
 

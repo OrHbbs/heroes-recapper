@@ -4,6 +4,9 @@ import json
 from itertools import islice
 import time
 
+from sortedcontainers import SortedDict
+
+import utils
 from utils import default_wanted_keys, get_as_str
 
 
@@ -11,14 +14,13 @@ def get_match_type(match_type: int):
     pass
 
 
-def get_datetime(utc_time: int):
-    # assuming time in nanoseconds
-    # todo this assumption is wrong
-    sec = utc_time / 1_000_000_000
+def get_datetime(utc_time: int, timezone: int = 0):
+    sec = (utc_time + timezone) / 10000000
 
-    epoch = datetime(1970, 1, 1)
+    epoch = datetime(1601, 1, 1)
     dt = epoch + timedelta(seconds=sec)
-    return str(dt)
+
+    return str(dt.replace(microsecond=0))
 
 
 def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[str] = default_wanted_keys):
@@ -54,81 +56,98 @@ def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[s
     return details
 
 
-def parse_replay(path: str, create_json: bool = True):
+def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = False, sorted_dict=None):
+    if sorted_dict is None:
+        sorted_dict = {}
     import mpyq
 
     mpyq = mpyq.MPQArchive(path)
 
-    header = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
-    build_number = header['m_version']['m_baseBuild']
-
-    module_name = 'heroprotocol.protocol{}'.format(build_number)
-
-    print(module_name)
-
     details = protocol.decode_replay_details(mpyq.read_file('replay.details'))
-    tracker_events = protocol.decode_replay_tracker_events(mpyq.read_file('replay.tracker.events'))
-    header_info = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
 
-    player_list = details['m_playerList']
 
-    del details['m_playerList']
+    if check_duplicate is False or details['m_timeUTC'] not in sorted_dict:
 
-    # print(tracker_events)
+        initdata = protocol.decode_replay_initdata(mpyq.read_file('replay.initdata'))
+        game_mode = initdata['m_syncLobbyState']['m_gameDescription']['m_gameOptions']['m_ammId']
 
-    output = {
-        'rawDate': details['m_timeUTC'],
-        'date': get_datetime(details['m_timeUTC']),
-        'map': get_as_str(details['m_title']),
-        # 'winner': get_as_str(tracker_events),
-        'duration': None,
-        # 'firstToTen':
-        # 'firstFort':
-        #
-    }
+        print(game_mode)
 
-    players = []
-    for player in player_list:
+        # not parsing customs for now
+        if game_mode is None:
+            return {}
 
-        for key, value in player.items():
-            if type(value) is bytes:
-                player[key] = get_as_str(value)
+        header = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
+        build_number = header['m_version']['m_baseBuild']
 
-        player_output = {
-            'name': player['m_name'],
-            'hero': player['m_hero'],
-            'result': player['m_result'],
-            # 'team': player['m_teamId']
+        module_name = 'heroprotocol.protocol{}'.format(build_number)
+
+        print(module_name)
+
+        tracker_events = protocol.decode_replay_tracker_events(mpyq.read_file('replay.tracker.events'))
+
+        player_list = details['m_playerList']
+
+        del details['m_playerList']
+
+        timezone_offset = details['m_timeLocalOffset']
+
+        # For inserting into a json or dataframe, add the row to database.py as well
+        output = {
+            'rawDate': details['m_timeUTC'],
+            'date': get_datetime(details['m_timeUTC'], timezone=timezone_offset),
+            'map': get_as_str(details['m_title']),
+            # 'winner': get_as_str(tracker_events),
+            'gameMode': utils.game_mode_strings[game_mode],
+            'duration': None,
+            # 'firstToTen':
+            # 'firstFort':
+            #
         }
 
-        players.append(player_output)
+        players = []
+        for player in player_list:
 
-    output['players'] = players
+            for key, value in player.items():
+                if type(value) is bytes:
+                    player[key] = get_as_str(value)
 
-    events_data = {}
+            player_output = {
+                'name': player['m_name'],
+                'hero': player['m_hero'],
+                'result': player['m_result'],
+                # 'team': player['m_teamId']
+            }
 
-    # converting data to non-bytes
-    for event in tracker_events:
+            players.append(player_output)
 
-        for key, value in event.items():
-            event[key] = get_as_str(value)
+        output['players'] = players
 
-        events_data.update(event)
+        events_data = {}
 
-    game_stats = get_player_data(events_data, len(player_list))
+        # converting data to non-bytes
+        for event in tracker_events:
 
-    #todo game time is different on heroesprofile and stats of the storm, which one is correct?
-    output['duration'] = game_stats['duration']
+            for key, value in event.items():
+                event[key] = get_as_str(value)
 
-    for i in range(len(player_list)):
-        output['players'][i].update(game_stats['player_details'][i])
+            events_data.update(event)
 
-    if create_json:
-        with open('data.json', 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=4)
+        game_stats = get_player_data(events_data, len(player_list))
 
-    if True:
-        with open('more-data.json', 'a', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=4)
+        #todo game time is different on heroesprofile and stats of the storm, which one is correct?
+        output['duration'] = game_stats['duration']
 
-    return output
+        for i in range(len(player_list)):
+            output['players'][i].update(game_stats['player_details'][i])
+
+        if create_json:
+            with open('data.json', 'w', encoding='utf-8') as f:
+                json.dump(output, f, ensure_ascii=False, indent=4)
+
+        if True:
+            with open('more-data.json', 'a', encoding='utf-8') as f:
+                json.dump(output, f, ensure_ascii=False, indent=4)
+
+        return output
+    return {}

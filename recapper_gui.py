@@ -1,13 +1,19 @@
 import datetime
+import json
 import threading
 import os
+import time
 import tkinter as tk
+import tkinter.filedialog
 import pandas as pd
 import sv_ttk
 from PIL import Image, ImageDraw, ImageTk
+from sortedcontainers import SortedDict
+from tksheet import Sheet
 from tktooltip import ToolTip
 
 import database
+import utils
 from utils import clean_string, test_paths, get_winner
 
 
@@ -32,6 +38,8 @@ class RecapperGui:
 
     def __init__(self, root):
 
+        self.sheet = None
+        self.table_frame = None
         self.tab1 = None
         self.tab2 = None
         self.tab3 = None
@@ -42,6 +50,7 @@ class RecapperGui:
         self.button = None
         self.label = None
         self.tab1_canvas = None
+        self.tab2_canvas = None
         self.root = root
 
         sv_ttk.set_theme("dark")
@@ -57,13 +66,22 @@ class RecapperGui:
         except FileNotFoundError:
             pass
 
+        self.sorted_data = SortedDict()
+
+        try:
+            with open('gui_output.json', 'r') as openfile:
+                self.sorted_data = utils.load_partial_json('gui_output.json')
+        except FileNotFoundError:
+            pass
+
+        if len(self.sorted_data) > 0:
+            _, self.selected_match = self.sorted_data.peekitem()
+
         self.limit = 0
         self.set_limit()
 
         # self.database = add_to_database(paths=["test-data/infernal.StormReplay", "test-data/sample0.StormReplay"], matches_database=newDF)
         self.create_widgets()
-
-        print(database)
 
     def create_menu(self):
         menu_bar = tk.Menu(self.root)
@@ -132,11 +150,18 @@ class RecapperGui:
         self.tab1_canvas.itemconfig(self.inner_frame_id, width=canvas_width)
 
     def create_row(self, row_number):
+
         sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", width=800, height=150)
+                              # command=lambda match=database.get_ith_value(self.containers, row_number): self.on_hero_click(match))
         sub_frame.pack(pady=10, fill=tk.X, expand=True)
 
+        match_data = database.get_nth_value(self.sorted_data, row_number)
+
         text_widget = tk.Label(sub_frame,
-                               text=f"{self.database['map'][row_number]}\n{get_winner(self.database['1_result'][row_number])}\n{str(datetime.timedelta(seconds=int(self.database['duration'][row_number]) - 45))}",
+                               text=f"{match_data['gameMode']}: {match_data['map']}\n"
+                                    f"{get_winner(match_data['1_result'])}\n"
+                                    f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
+                                    f"{match_data['date']}",
                                justify="center")
         text_widget.pack(pady=5, padx=10)
 
@@ -144,7 +169,7 @@ class RecapperGui:
         image_container.pack(pady=10, padx=10, anchor="w")
 
         for i in range(10):
-            self.create_hero_icon(image_container, row_number, i)
+            self.create_hero_icon(image_container, match_data, i)
 
         self.tab1_canvas.update_idletasks()
         self.tab1_canvas.configure(scrollregion=self.tab1_canvas.bbox("all"))
@@ -152,18 +177,16 @@ class RecapperGui:
     def refresh_rows(self):
         self.set_limit()
 
-        for widget in self.tab1_canvas.winfo_children():
+        for widget in self.inner_frame.winfo_children():
             widget.destroy()
 
         for i in range(self.limit):
             self.create_row(i)
 
-        print(self.database)
-
         self.hide_loading_screen()
 
-    def create_hero_icon(self, container, row_number, index):
-        hero_name = clean_string(self.database[f"{index + 1}_hero"][row_number])
+    def create_hero_icon(self, container, match_data, index):
+        hero_name = clean_string(match_data[f"{index + 1}_hero"])
         image_path = f"heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue"
@@ -174,7 +197,7 @@ class RecapperGui:
         image_button = tk.Button(container, image=circular_image,
                                  command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='0')
         image_button.image = circular_image
-        ToolTip(image_button, msg=self.database[f"{index + 1}_name"][row_number], delay=0.5)
+        ToolTip(image_button, msg=match_data[f"{index + 1}_name"], delay=0.5)
 
         if index == 5:
             image_button.pack(side=tk.LEFT, padx=(50, 10))
@@ -185,20 +208,97 @@ class RecapperGui:
         print(f"Hero clicked: {hero_name}")
 
     def create_tab2_content(self):
+        print("creating tab 2 content")
+
+        self.tab2_canvas = tk.Canvas(self.tab2, relief=tk.SUNKEN)
         label = tk.Label(self.tab2, text="Select A Match")
         label.pack(pady=20, padx=20)
+
+        self.table_frame = tk.Frame(self.tab2_canvas)
+
+        self.sheet = Sheet(self.tab2,
+                           headers=["Player", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing",
+                                    "Damage Taken", "XP Contribution"],
+                           height=400,
+                           width=600)
+        self.sheet.enable_bindings(("single_select",
+                                    "column_select",
+                                    "column_width_resize",
+                                    "double_click_column_resize",
+                                    "arrowkeys",
+                                    "row_height_resize",
+                                    "double_click_row_resize",
+                                    "right_click_popup_menu",
+                                    "rc_select",
+                                    "copy"))
+
+        self.sheet.set_options(
+            align="center",
+            font=("Helvetica", 12, ""),
+            header_font=("Helvetica", 10, "bold"),
+            row_index_width=50,
+            header_height=30,
+            header_background="gray",
+            header_foreground="white",
+            header_grid_color="black",
+            top_left_bg="black",
+            top_left_fg="white"
+        )
+        self.sheet.grid_background = "blue"
+        self.sheet.grid_color = "black"
+        self.sheet.row_index_bg = "gray"
+        self.sheet.row_index_fg = "white"
+
+        self.sheet.pack(fill=tk.BOTH, expand=True)
+
+        self.populate_table()
+
+    def populate_table(self):
+
+        self.sheet.headers(
+            ["Player", "Hero", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing", "Damage Taken",
+             "XP Contribution"])
+
+        data = []
+
+        match_data = self.selected_match  # Now this is the dictionary containing match data
+
+        for i in range(1, 11):  # assuming 10 players
+            prefix = f"{i}_"
+            print(match_data[f"{prefix}name"])
+            row = [
+                match_data.get(f"{prefix}name", ""),
+                match_data.get(f"{prefix}hero", ""),
+                match_data.get(f"{prefix}SoloKill", 0),
+                match_data.get(f"{prefix}Takedowns", 0),
+                match_data.get(f"{prefix}Deaths", 0),
+                match_data.get(f"{prefix}HeroDamage", 0),
+                match_data.get(f"{prefix}SiegeDamage", 0),
+                match_data.get(f"{prefix}Healing", 0),
+                match_data.get(f"{prefix}DamageTaken", 0),
+                match_data.get(f"{prefix}ExperienceContribution", 0)
+            ]
+            data.append(row)
+
+        self.sheet.set_sheet_data(data)
+        self.tab2_canvas.update_idletasks()
 
     def create_tab3_content(self):
         label = tk.Label(self.tab3, text="Player Details")
         label.pack(pady=20, padx=20)
 
     def set_limit(self):
-        self.limit = min(20, len(self.database.index))
-        print(self.limit)
+        self.limit = min(20, len(self.sorted_data))
 
     def exit_app(self):
-        database.save_to_pickle("new_pickle.pkl", self.database)
-        print(self.database)
+        # database.save_to_pickle("new_pickle.pkl", self.database)
+
+        print("exiting")
+
+        dat = dict(self.sorted_data)
+
+        with open("gui_output.json", "w") as outfile:
+            json.dump(dat, outfile, indent=4)
         root.destroy()
 
     def show_loading_screen(self):
@@ -213,13 +313,13 @@ class RecapperGui:
         self.root.update_idletasks()
 
     def select_replay(self):
-        paths = tk.filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])
+        path = [tk.filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])]
 
         self.show_loading_screen()
 
-        thread = threading.Thread(target=self.process_replays)
+        thread = threading.Thread(target=self.process_sorted_replays(paths=path))
         thread.start()
-        self.process_replays([paths])
+        # self.process_replays_containers(paths=[paths])
 
     def select_directory(self):
         file_path = tk.filedialog.askdirectory()
@@ -230,13 +330,20 @@ class RecapperGui:
                 if file.endswith(".StormReplay"):
                     paths.append(os.path.join(root, file))
 
+        start = time.time()
         self.show_loading_screen()
-        thread = threading.Thread(target=self.process_replays)
+        thread = threading.Thread(target=self.process_sorted_replays(paths=paths))
         thread.start()
-        self.process_replays(paths)
+
+        print(f"processing time: {time.time() - start}")
 
     def process_replays(self, paths: list[str]):
-        self.database = database.add_to_database(paths=paths, matches_database=self.database)
+        self.database = database.add_to_container(paths=paths, matches_database=self.database)
+        self.refresh_rows()
+        self.root.update_idletasks()
+
+    def process_sorted_replays(self, paths: list[str]):
+        self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
         self.refresh_rows()
         self.root.update_idletasks()
 

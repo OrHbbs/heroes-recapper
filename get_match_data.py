@@ -65,13 +65,14 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
     details = protocol.decode_replay_details(mpyq.read_file('replay.details'))
 
-
     if check_duplicate is False or details['m_timeUTC'] not in sorted_dict:
 
         initdata = protocol.decode_replay_initdata(mpyq.read_file('replay.initdata'))
+        attribute_events = protocol.decode_replay_attributes_events(mpyq.read_file('replay.attributes.events'))
         game_mode = initdata['m_syncLobbyState']['m_gameDescription']['m_gameOptions']['m_ammId']
+        bans = initdata['m_syncLobbyState']
 
-        print(game_mode)
+        # print(game_mode)
 
         # not parsing customs for now
         if game_mode is None:
@@ -92,7 +93,7 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
         timezone_offset = details['m_timeLocalOffset']
 
-        # For inserting into a json or dataframe, add the row to database.py as well
+        # For inserting data into a json or dataframe, add the row to database.py as well
         output = {
             'rawDate': details['m_timeUTC'],
             'date': get_datetime(details['m_timeUTC'], timezone=timezone_offset),
@@ -102,7 +103,9 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
             'duration': None,
             # 'firstToTen':
             # 'firstFort':
-            #
+            'bansBlue': ["", "", ""],
+            'bansRed': ["", "", ""],
+            'firstPick': None
         }
 
         players = []
@@ -126,6 +129,9 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         events_data = {}
 
         # converting data to non-bytes
+
+        b_line = 0
+
         for event in tracker_events:
 
             for key, value in event.items():
@@ -133,9 +139,32 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
             events_data.update(event)
 
+            if event['_event'] == 'NNet.Replay.Tracker.SHeroBannedEvent':
+                for vals in event:
+                    match b_line:
+                        case 0:  # hero name is kept the first line, and on every 6th line after that
+                            output["bansBlue"][0] = utils.get_shortname_by_altname(event[vals])
+                        case 1:  # second line is the team who banned the first hero, and subsequently the team with fp
+                            output["firstPick"] = (event[vals])
+                        case 6:
+                            output["bansRed"][0] = utils.get_shortname_by_altname(event[vals])
+                        case 12:
+                            output["bansBlue"][1] = utils.get_shortname_by_altname(event[vals])
+                        case 18:
+                            output["bansRed"][1] = utils.get_shortname_by_altname(event[vals])
+                        case 24:
+                            output["bansRed"][2] = utils.get_shortname_by_altname(event[vals])
+                        case 30:
+                            output["bansBlue"][2] = utils.get_shortname_by_altname(event[vals])
+
+                    b_line += 1
+
+        print(output['bansBlue'])
+        print(output['bansRed'])
+
         game_stats = get_player_data(events_data, len(player_list))
 
-        #todo game time is different on heroesprofile and stats of the storm, which one is correct?
+        # todo game time is different on heroesprofile and stats of the storm, which one is correct?
         output['duration'] = game_stats['duration']
 
         for i in range(len(player_list)):

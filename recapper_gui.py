@@ -38,11 +38,20 @@ class RecapperGui:
 
     def __init__(self, root):
 
-        self.sheet = None
-        self.table_frame = None
+        self.tab2_tree = None
+        self.tab3_tree = None
+
+        self.tab2_data = None
+        self.tab3_data = None
+
+        self.tab2_frame = None
+        self.tab3_frame = None
+
         self.tab1 = None
         self.tab2 = None
         self.tab3 = None
+        self.tab4 = None
+
         self.inner_frame = None
         self.inner_frame_id = None
         self.notebook = None
@@ -51,12 +60,18 @@ class RecapperGui:
         self.label = None
         self.tab1_canvas = None
         self.tab2_canvas = None
+        self.tab3_canvas = None
+
+        self.tab2_sort_state = {"column": None, "ascending": False}
+        self.tab3_sort_state = {"column": None, "ascending": False}
+
         self.root = root
+        self.hero_table = None
 
         sv_ttk.set_theme("dark")
 
         self.root.title("Heroes Recapper")
-        self.root.geometry("1200x400")
+        self.root.geometry("1200x600")
 
         replays = test_paths
         self.database = pd.DataFrame()
@@ -73,6 +88,14 @@ class RecapperGui:
                 self.sorted_data = utils.load_partial_json('gui_output.json')
         except FileNotFoundError:
             pass
+
+        try:
+            with open('hero_table.json', 'r') as f:
+                self.hero_table = json.load(f)
+        except FileNotFoundError:
+            self.hero_table = utils.create_empty_hero_table()
+
+        self.selected_match = None
 
         if len(self.sorted_data) > 0:
             _, self.selected_match = self.sorted_data.peekitem()
@@ -118,11 +141,12 @@ class RecapperGui:
 
         self.notebook.add(self.tab1, text="Replays")
         self.notebook.add(self.tab2, text="Match Details")
-        self.notebook.add(self.tab3, text="Player Stats")
+        self.notebook.add(self.tab3, text="Hero Stats")
 
         self.create_tab1_content()
         self.create_tab2_content()
         self.create_tab3_content()
+        # self.create_tab4_content()
 
     def create_tab1_content(self):
         self.tab1_canvas = tk.Canvas(self.tab1, relief=tk.SUNKEN)
@@ -152,16 +176,17 @@ class RecapperGui:
     def create_row(self, row_number):
 
         sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", width=800, height=150)
-                              # command=lambda match=database.get_ith_value(self.containers, row_number): self.on_hero_click(match))
+                              # command=lambda match=database.get_nth_value(self.sorted_data, row_number): self.set_selected_match(match))
         sub_frame.pack(pady=10, fill=tk.X, expand=True)
 
         match_data = database.get_nth_value(self.sorted_data, row_number)
 
         text_widget = tk.Label(sub_frame,
-                               text=f"{match_data['gameMode']}: {match_data['map']}\n"
-                                    f"{get_winner(match_data['1_result'])}\n"
+                               text=f"{match_data['date']}\n"
+                                    f"{match_data['gameMode']}: {match_data['map']}\n"
                                     f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
-                                    f"{match_data['date']}",
+                                    f"{get_winner(match_data['1_result'])}\n"
+                                    ,
                                justify="center")
         text_widget.pack(pady=5, padx=10)
 
@@ -184,6 +209,13 @@ class RecapperGui:
             self.create_row(i)
 
         self.hide_loading_screen()
+
+    def set_selected_match(self, match):
+        self.selected_match = match
+        print(self.selected_match)
+
+        self.refresh_tables()
+        return
 
     def create_hero_icon(self, container, match_data, index):
         hero_name = clean_string(match_data[f"{index + 1}_hero"])
@@ -208,65 +240,56 @@ class RecapperGui:
         print(f"Hero clicked: {hero_name}")
 
     def create_tab2_content(self):
-        print("creating tab 2 content")
 
         self.tab2_canvas = tk.Canvas(self.tab2, relief=tk.SUNKEN)
-        label = tk.Label(self.tab2, text="Select A Match")
+        self.tab2_canvas.pack(fill=tk.BOTH, expand=True)
+
+        label = tk.Label(self.tab2_canvas, text=f"{self.selected_match['date']}\n"
+                                                f"{self.selected_match['gameMode']}: {self.selected_match['map']}\n"
+                                                f"{str(datetime.timedelta(seconds=int(self.selected_match['duration']) - 45))}\n"
+                                                f"{get_winner(self.selected_match['1_result'])}\n"
+                         )
         label.pack(pady=20, padx=20)
 
-        self.table_frame = tk.Frame(self.tab2_canvas)
+        self.tab2_frame = tk.Frame(self.tab2_canvas)
+        self.tab2_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.sheet = Sheet(self.tab2,
-                           headers=["Player", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing",
-                                    "Damage Taken", "XP Contribution"],
-                           height=400,
-                           width=600)
-        self.sheet.enable_bindings(("single_select",
-                                    "column_select",
-                                    "column_width_resize",
-                                    "double_click_column_resize",
-                                    "arrowkeys",
-                                    "row_height_resize",
-                                    "double_click_row_resize",
-                                    "right_click_popup_menu",
-                                    "rc_select",
-                                    "copy"))
+        columns = ["Number", "Player", "Hero", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing",
+                   "Damage Taken", "XP Contribution"]
+        column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
-        self.sheet.set_options(
-            align="center",
-            font=("Helvetica", 12, ""),
-            header_font=("Helvetica", 10, "bold"),
-            row_index_width=50,
-            header_height=30,
-            header_background="gray",
-            header_foreground="white",
-            header_grid_color="black",
-            top_left_bg="black",
-            top_left_fg="white"
-        )
-        self.sheet.grid_background = "blue"
-        self.sheet.grid_color = "black"
-        self.sheet.row_index_bg = "gray"
-        self.sheet.row_index_fg = "white"
+        self.tab2_tree = tk.ttk.Treeview(self.tab2_frame, columns=columns, show="headings")
+        self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.sheet.pack(fill=tk.BOTH, expand=True)
+        for col, width in zip(columns, column_widths):
+            self.tab2_tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab2_tree, tab_sort_state=self.tab2_sort_state))
+            self.tab2_tree.column(col, anchor="center", width=width, )
 
-        self.populate_table()
+        scrollbar = tk.ttk.Scrollbar(self.tab2_frame, orient=tk.VERTICAL, command=self.tab2_tree.yview)
+        self.tab2_tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def populate_table(self):
+        self.refresh_tab2_table()
 
-        self.sheet.headers(
-            ["Player", "Hero", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing", "Damage Taken",
-             "XP Contribution"])
+    def refresh_tab2_table(self):
 
-        data = []
+        if not self.selected_match:
+            return
 
-        match_data = self.selected_match  # Now this is the dictionary containing match data
+        match_data = self.selected_match
+
+        for row in self.tab2_tree.get_children():
+            self.tab2_tree.delete(row)
+
+        self.tab2_data = []
+
+        self.tab2_tree.tag_configure('blue_row', background='#08075e')
+        self.tab2_tree.tag_configure('red_row', background='#731009')
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
-            print(match_data[f"{prefix}name"])
             row = [
+                i,
                 match_data.get(f"{prefix}name", ""),
                 match_data.get(f"{prefix}hero", ""),
                 match_data.get(f"{prefix}SoloKill", 0),
@@ -278,13 +301,93 @@ class RecapperGui:
                 match_data.get(f"{prefix}DamageTaken", 0),
                 match_data.get(f"{prefix}ExperienceContribution", 0)
             ]
-            data.append(row)
+            self.tab2_data.append(row)
 
-        self.sheet.set_sheet_data(data)
+            if i <= 5:
+                self.tab2_tree.insert("", tk.END, values=row, tags=('blue_row',))
+            else:
+                self.tab2_tree.insert("", tk.END, values=row, tags=('red_row',))
+
         self.tab2_canvas.update_idletasks()
 
+    def sort_by_column(self, col, tab_tree, tab_sort_state):
+        data = [(tab_tree.set(child, col), child) for child in tab_tree.get_children('')]
+
+        try:
+            data.sort(key=lambda x: int(x[0]), reverse=tab_sort_state.get(col, True))
+        except ValueError:
+            data.sort(key=lambda x: x[0], reverse=tab_sort_state.get(col, True))
+
+        for index, (val, child) in enumerate(data):
+            tab_tree.move(child, '', index)
+
+        tab_sort_state[col] = not tab_sort_state.get(col, True)
+
+        # Update the column heading to indicate sorting direction
+        for column in tab_tree["columns"]:
+            if column == col:
+                direction = "▲" if tab_sort_state[col] else "▼"
+                tab_tree.heading(column, text=f"{col} {direction}")
+            else:
+                tab_tree.heading(column, text=column)
+
+    def refresh_tables(self):
+        for widget in self.tab2_canvas.winfo_children():
+            widget.destroy()
+
     def create_tab3_content(self):
-        label = tk.Label(self.tab3, text="Player Details")
+        label = tk.Label(self.tab3, text="Hero Stats")
+        label.pack(pady=20, padx=20)
+
+        self.tab3_canvas = tk.Canvas(self.tab3, relief=tk.SUNKEN)
+        self.tab3_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.tab3_frame = tk.Frame(self.tab3_canvas)
+        self.tab3_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = ["Hero", "Role", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence", "Games Played"]
+        column_widths = [100, 30, 20, 20, 20, 20, 20, 30, 20]
+
+        scrollbar = tk.Scrollbar(self.tab3_frame, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, show="headings", yscrollcommand=scrollbar.set, )
+        self.tab3_tree.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.tab3_tree.yview)
+
+        for col, width in zip(columns, column_widths):
+            self.tab3_tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab3_tree, tab_sort_state=self.tab3_sort_state))
+            self.tab3_tree.column(col, anchor="w", width=width, )
+
+        ht = self.hero_table
+        total_games = len(self.sorted_data)
+
+        self.tab3_data = []
+
+        for i in range(len(ht)):
+            games_played = ht[i].get("gamesPlayed")
+            games_won = ht[i].get('gamesWon', 0)
+            pick_rate = ht[i].get('gamesPlayed', 0) / total_games if total_games != 0 else 0
+            ban_rate = ht[i].get('gamesBanned', 0) / total_games if total_games != 0 else 0
+
+            row = [
+                ht[i].get("name"),
+                ht[i].get("role"),
+                f"{100 * round(games_won / games_played if games_played != 0 else 0, 4)}",
+                f"±{100 * round(utils.wald_interval(x=games_won, n=games_played), 4)} ",
+                f"{100 * round(pick_rate + ban_rate, 4)}",
+                f"{100 * round(pick_rate, 4)}",
+                f"{100 * round(ban_rate, 4)}",
+                "influence",  # Adjust if 'influence' needs to be calculated
+                games_played
+            ]
+            self.tab3_data.append(row)
+            self.tab3_tree.insert("", tk.END, values=row)
+
+        self.tab3_canvas.update_idletasks()
+
+    def create_tab4_content(self):
+        label = tk.Label(self.tab4, text="Player Stats")
         label.pack(pady=20, padx=20)
 
     def set_limit(self):
@@ -298,7 +401,7 @@ class RecapperGui:
         dat = dict(self.sorted_data)
 
         with open("gui_output.json", "w") as outfile:
-            json.dump(dat, outfile, indent=4)
+            json.dump(dat, outfile)
         root.destroy()
 
     def show_loading_screen(self):
@@ -343,9 +446,12 @@ class RecapperGui:
         self.root.update_idletasks()
 
     def process_sorted_replays(self, paths: list[str]):
-        self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
+        # self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
+        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data, hero_table=self.hero_table)
         self.refresh_rows()
         self.root.update_idletasks()
+
+        # utils.update_player_tables()
 
     # todo opens a sub-window with a slideshow on how to use basic features
     def open_help_menu(self):

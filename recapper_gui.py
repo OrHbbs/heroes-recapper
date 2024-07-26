@@ -17,8 +17,8 @@ import utils
 from utils import clean_string, test_paths, get_winner
 
 
-def create_circular_image(image_path: str, border_color: str = "black", border_width: int = 2):
-    img = Image.open(image_path).resize((50, 50), Image.LANCZOS).convert("RGBA")
+def create_circular_image(image_path: str, border_color: str = "black", border_width: int = 2, size=50):
+    img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
 
     mask = Image.new("L", img.size, 0)
     draw = ImageDraw.Draw(mask)
@@ -38,6 +38,15 @@ class RecapperGui:
 
     def __init__(self, root):
 
+        self.tree = None
+        self.tab2_hero_images = {}
+        self.tab3_hero_images = {}
+
+        self.tab1_canvas = None
+        self.tab2_canvas = None
+        self.tab3_canvas = None
+        self.tab4_canvas = None
+
         self.tab2_tree = None
         self.tab3_tree = None
 
@@ -46,6 +55,7 @@ class RecapperGui:
 
         self.tab2_frame = None
         self.tab3_frame = None
+        self.tab4_frame = None
 
         self.tab1 = None
         self.tab2 = None
@@ -58,9 +68,6 @@ class RecapperGui:
         self.scrollbar = None
         self.button = None
         self.label = None
-        self.tab1_canvas = None
-        self.tab2_canvas = None
-        self.tab3_canvas = None
 
         self.tab2_sort_state = {"column": None, "ascending": False}
         self.tab3_sort_state = {"column": None, "ascending": False}
@@ -71,7 +78,7 @@ class RecapperGui:
         sv_ttk.set_theme("dark")
 
         self.root.title("Heroes Recapper")
-        self.root.geometry("1200x600")
+        self.root.geometry("1200x650")
 
         replays = test_paths
         self.database = pd.DataFrame()
@@ -138,15 +145,17 @@ class RecapperGui:
         self.tab1 = tk.Frame(self.notebook)
         self.tab2 = tk.Frame(self.notebook)
         self.tab3 = tk.Frame(self.notebook)
+        self.tab4 = tk.Frame(self.notebook)
 
         self.notebook.add(self.tab1, text="Replays")
         self.notebook.add(self.tab2, text="Match Details")
         self.notebook.add(self.tab3, text="Hero Stats")
+        self.notebook.add(self.tab4, text="Testing")
 
         self.create_tab1_content()
         self.create_tab2_content()
         self.create_tab3_content()
-        # self.create_tab4_content()
+        self.create_tab4_content()
 
     def create_tab1_content(self):
         self.tab1_canvas = tk.Canvas(self.tab1, relief=tk.SUNKEN)
@@ -244,10 +253,10 @@ class RecapperGui:
         self.tab2_canvas = tk.Canvas(self.tab2, relief=tk.SUNKEN)
         self.tab2_canvas.pack(fill=tk.BOTH, expand=True)
 
-        label = tk.Label(self.tab2_canvas, text=f"{self.selected_match['date']}\n"
-                                                f"{self.selected_match['gameMode']}: {self.selected_match['map']}\n"
-                                                f"{str(datetime.timedelta(seconds=int(self.selected_match['duration']) - 45))}\n"
-                                                f"{get_winner(self.selected_match['1_result'])}\n"
+        label = tk.Label(self.tab2_canvas, text=f"{self.selected_match.get('date')}\n"
+                                                f"{self.selected_match.get('gameMode')}: {self.selected_match.get('map')}\n"
+                                                f"{str(datetime.timedelta(seconds=int(self.selected_match.get('duration')) - 45))}\n"
+                                                f"{get_winner(self.selected_match.get('1_result'))}\n"
                          )
         label.pack(pady=20, padx=20)
 
@@ -258,7 +267,7 @@ class RecapperGui:
                    "Damage Taken", "XP Contribution"]
         column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
-        self.tab2_tree = tk.ttk.Treeview(self.tab2_frame, columns=columns, show="headings")
+        self.tab2_tree = tk.ttk.Treeview(self.tab2_frame, columns=columns, show="tree headings")
         self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         for col, width in zip(columns, column_widths):
@@ -282,15 +291,18 @@ class RecapperGui:
             self.tab2_tree.delete(row)
 
         self.tab2_data = []
+        self.tab2_hero_images = {}
 
         self.tab2_tree.tag_configure('blue_row', background='#08075e')
         self.tab2_tree.tag_configure('red_row', background='#731009')
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
+            hero_name = match_data.get(f"{prefix}hero")
+            clean_hero_name = clean_string(hero_name)
             row = [
                 i,
-                match_data.get(f"{prefix}name", ""),
+                match_data.get(f"{prefix}name"),
                 match_data.get(f"{prefix}hero", ""),
                 match_data.get(f"{prefix}SoloKill", 0),
                 match_data.get(f"{prefix}Takedowns", 0),
@@ -303,10 +315,18 @@ class RecapperGui:
             ]
             self.tab2_data.append(row)
 
+            image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
+
+            img = create_circular_image(image_path, border_width=0, size=40)
+            self.tab2_hero_images[clean_hero_name] = img
+
             if i <= 5:
-                self.tab2_tree.insert("", tk.END, values=row, tags=('blue_row',))
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name], tags=('blue_row',))
             else:
-                self.tab2_tree.insert("", tk.END, values=row, tags=('red_row',))
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name], tags=('red_row',))
+
+            self.tab2_tree.heading('#0', text='Icon', anchor='center')
+            self.tab2_tree.column('#0',width=20)
 
         self.tab2_canvas.update_idletasks()
 
@@ -336,6 +356,7 @@ class RecapperGui:
             widget.destroy()
 
     def create_tab3_content(self):
+
         label = tk.Label(self.tab3, text="Hero Stats")
         label.pack(pady=20, padx=20)
 
@@ -345,34 +366,40 @@ class RecapperGui:
         self.tab3_frame = tk.Frame(self.tab3_canvas)
         self.tab3_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ["Hero", "Role", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence", "Games Played"]
-        column_widths = [100, 30, 20, 20, 20, 20, 20, 30, 20]
+        columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence", "Games Played"]
+        column_widths = [50, 100, 80, 80, 100, 100, 100, 100, 100, 120]
+
+        style = tk.ttk.Style()
+        style.configure("Treeview", rowheight=40)  # Adjust this value as needed
 
         scrollbar = tk.Scrollbar(self.tab3_frame, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, show="headings", yscrollcommand=scrollbar.set, )
+        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings", yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)
 
         for col, width in zip(columns, column_widths):
             self.tab3_tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab3_tree, tab_sort_state=self.tab3_sort_state))
-            self.tab3_tree.column(col, anchor="w", width=width, )
+            self.tab3_tree.column(col, anchor="w", width=width)
 
         ht = self.hero_table
         total_games = len(self.sorted_data)
-
         self.tab3_data = []
 
-        for i in range(len(ht)):
-            games_played = ht[i].get("gamesPlayed")
-            games_won = ht[i].get('gamesWon', 0)
-            pick_rate = ht[i].get('gamesPlayed', 0) / total_games if total_games != 0 else 0
-            ban_rate = ht[i].get('gamesBanned', 0) / total_games if total_games != 0 else 0
+        self.tab3_hero_images = {}
+
+        for i, hero in enumerate(ht):
+            games_played = hero.get("gamesPlayed")
+            games_won = hero.get('gamesWon', 0)
+            pick_rate = hero.get('gamesPlayed', 0) / total_games if total_games != 0 else 0
+            ban_rate = hero.get('gamesBanned', 0) / total_games if total_games != 0 else 0
+
+            hero_name = hero.get("name")
+            clean_hero_name = clean_string(hero_name)
 
             row = [
-                ht[i].get("name"),
-                ht[i].get("role"),
+                hero_name,
                 f"{100 * round(games_won / games_played if games_played != 0 else 0, 4)}",
                 f"±{100 * round(utils.wald_interval(x=games_won, n=games_played), 4)} ",
                 f"{100 * round(pick_rate + ban_rate, 4)}",
@@ -381,14 +408,29 @@ class RecapperGui:
                 "influence",  # Adjust if 'influence' needs to be calculated
                 games_played
             ]
-            self.tab3_data.append(row)
-            self.tab3_tree.insert("", tk.END, values=row)
+
+            image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
+
+            img = create_circular_image(image_path, border_width=0, size=40)
+            self.tab3_hero_images[clean_hero_name] = img
+            self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[clean_hero_name])
+            self.tab3_tree.heading('#0', text='Icon', anchor='center')
+            self.tab3_tree.column('#0',width=50)
 
         self.tab3_canvas.update_idletasks()
 
     def create_tab4_content(self):
         label = tk.Label(self.tab4, text="Player Stats")
         label.pack(pady=20, padx=20)
+
+        self.tab4_canvas = tk.Canvas(self.tab4, relief=tk.SUNKEN)
+        self.tab4_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.tab4_frame = tk.Frame(self.tab4_canvas)
+        self.tab4_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.tree = tk.ttk.Treeview(self.tab4_frame, column=())
+        self.tree.pack(fill=tk.BOTH, expand=True)
 
     def set_limit(self):
         self.limit = min(20, len(self.sorted_data))

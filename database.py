@@ -330,35 +330,3 @@ def save_to_pickle(path, matches_database):
 
 def load_from_pickle(path):
     return pd.read_pickle(path)
-
-
-def test():
-    replays = test_paths
-    newDF = pd.DataFrame()
-
-    start_time = time.time()
-    newDF = add_to_database(replays, newDF, create_json=True)
-    print(f"runtime: {time.time() - start_time}")
-
-    newDF = sort_dataframe(newDF, "rawDate")
-    print(newDF)
-
-    save_to_pickle("a_pickle.pkl", newDF)
-
-
-def test2():
-    df = load_from_pickle("a_pickle.pkl")
-
-    print(df)
-    print(len(df.index))
-
-    paths1 = ["test-data/infernal.StormReplay"]
-    paths2 = test_paths
-
-    df = add_to_database(paths=paths2, matches_database=df)
-
-    # save_to_pickle("a_pickle.pkl", df)
-
-    sort_dataframe(df, "rawDate")
-    print(df)
-    print(len(df.index))

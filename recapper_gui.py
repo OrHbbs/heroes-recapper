@@ -9,7 +9,6 @@ import pandas as pd
 import sv_ttk
 from PIL import Image, ImageDraw, ImageTk
 from sortedcontainers import SortedDict
-from tksheet import Sheet
 from tktooltip import ToolTip
 
 import database

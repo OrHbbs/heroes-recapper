@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import json
 from itertools import islice
 import time
+import re
 
 from sortedcontainers import SortedDict
 
@@ -70,6 +71,7 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         initdata = protocol.decode_replay_initdata(mpyq.read_file('replay.initdata'))
         attribute_events = protocol.decode_replay_attributes_events(mpyq.read_file('replay.attributes.events'))
         game_mode = initdata['m_syncLobbyState']['m_gameDescription']['m_gameOptions']['m_ammId']
+        battlelobby = mpyq.read_file('replay.server.battlelobby')
         bans = initdata['m_syncLobbyState']
 
         # print(game_mode)
@@ -123,6 +125,17 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
             }
 
             players.append(player_output)
+
+        # finding and adding battletags
+
+        battlelobby_str = battlelobby.decode('utf-8', errors='ignore')
+        battletag_pattern = re.compile(r'([a-zA-Z0-9]+#[0-9]{4,5})')
+
+        battletags = battletag_pattern.findall(battlelobby_str)
+
+        for i in range(len(battletags)):
+            players[i]['battletag'] = battletags[i]
+        #
 
         output['players'] = players
 

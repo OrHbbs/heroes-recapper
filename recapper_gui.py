@@ -7,7 +7,7 @@ import tkinter as tk
 import tkinter.filedialog
 import pandas as pd
 import sv_ttk
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
 from tktooltip import ToolTip
 
@@ -16,27 +16,11 @@ import utils
 from utils import clean_string, test_paths, get_winner
 
 
-def create_circular_image(image_path: str, border_color: str = "black", border_width: int = 2, size=50):
-    img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
-
-    mask = Image.new("L", img.size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
-    bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
-    border_draw = ImageDraw.Draw(bordered_img)
-    border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
-    border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width),
-                        fill=(0, 0, 0, 0))
-
-    bordered_img.paste(img, (0, 0), mask=mask)
-
-    return ImageTk.PhotoImage(bordered_img)
-
-
 class RecapperGui:
 
     def __init__(self, root):
 
+        self.bg_img = None
         self.tree = None
         self.tab2_hero_images = {}
         self.tab3_hero_images = {}
@@ -77,23 +61,18 @@ class RecapperGui:
         sv_ttk.set_theme("dark")
 
         self.root.title("Heroes Recapper")
-        self.root.geometry("1200x650")
-
-        replays = test_paths
-        self.database = pd.DataFrame()
+        self.root.geometry("850x700")
 
         try:
             self.database = database.load_from_pickle("new_pickle.pkl")
         except FileNotFoundError:
-            pass
-
-        self.sorted_data = SortedDict()
+            self.database = pd.DataFrame()
 
         try:
-            with open('gui_output.json', 'r') as openfile:
+            with open('gui_output.json', 'r') as f:
                 self.sorted_data = utils.load_partial_json('gui_output.json')
         except FileNotFoundError:
-            pass
+            self.sorted_data = SortedDict()
 
         try:
             with open('hero_table.json', 'r') as f:
@@ -103,13 +82,12 @@ class RecapperGui:
 
         self.selected_match = None
 
-        if len(self.sorted_data) > 0:
-            _, self.selected_match = self.sorted_data.peekitem()
+        # if len(self.sorted_data) > 0:
+        #     _, self.selected_match = self.sorted_data.peekitem()
 
         self.limit = 0
         self.set_limit()
 
-        # self.database = add_to_database(paths=["test-data/infernal.StormReplay", "test-data/sample0.StormReplay"], matches_database=newDF)
         self.create_widgets()
 
     def create_menu(self):
@@ -163,10 +141,9 @@ class RecapperGui:
         scrollbar = tk.Scrollbar(self.tab1, orient=tk.VERTICAL, command=self.tab1_canvas.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab1_canvas.configure(yscrollcommand=scrollbar.set)
+        self.tab1_canvas.configure(yscrollcommand=scrollbar.set, yscrollincrement=82)
 
         self.inner_frame = tk.Frame(self.tab1_canvas)
-
         self.inner_frame.bind("<Configure>",
                               lambda e: self.tab1_canvas.configure(scrollregion=self.tab1_canvas.bbox("all")))
 
@@ -178,34 +155,91 @@ class RecapperGui:
             self.create_row(i)
 
     def on_canvas_configure(self, event):
+        # resizes the subcanvas
         canvas_width = event.width - 10
         self.tab1_canvas.itemconfig(self.inner_frame_id, width=canvas_width)
 
     def create_row(self, row_number):
-
-        sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", width=800, height=150)
-                              # command=lambda match=database.get_nth_value(self.sorted_data, row_number): self.set_selected_match(match))
-        sub_frame.pack(pady=10, fill=tk.X, expand=True)
-
+        row_height = 350
+        row_width = 700
         match_data = database.get_nth_value(self.sorted_data, row_number)
 
-        text_widget = tk.Label(sub_frame,
-                               text=f"{match_data['date']}\n"
-                                    f"{match_data['gameMode']}: {match_data['map']}\n"
-                                    f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
-                                    f"{get_winner(match_data['1_result'])}\n"
-                                    ,
-                               justify="center")
-        text_widget.pack(pady=5, padx=10)
+        bg_img_src = f"images/{clean_string(match_data['map'])}.png"
 
-        image_container = tk.Frame(sub_frame)
-        image_container.pack(pady=10, padx=10, anchor="w")
+        try:
+            original_bg_img = Image.open(bg_img_src)
+            if not hasattr(self, 'original_bg_images'):
+                self.original_bg_images = []
+            self.original_bg_images.append(original_bg_img)
+            bg_img = original_bg_img.resize((row_width, row_height), Image.LANCZOS)
+            darkened_img = ImageEnhance.Brightness(bg_img).enhance(0.5)
+            bg_img = ImageTk.PhotoImage(darkened_img)
+        except Exception as e:
+            print(f"Image for {bg_img_src} not found or error: {e}")
+            bg_img = None
 
-        for i in range(10):
-            self.create_hero_icon(image_container, match_data, i)
+        sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", height=row_height)
+        sub_frame.pack(pady=10, fill=tk.X, expand=True)
 
-        self.tab1_canvas.update_idletasks()
-        self.tab1_canvas.configure(scrollregion=self.tab1_canvas.bbox("all"))
+        sub_canvas = tk.Canvas(sub_frame, height=300)
+        sub_canvas.pack(fill=tk.BOTH, expand=True)
+
+        if bg_img:
+            self.bg_img_id = sub_canvas.create_image(0, 0, anchor="nw", image=bg_img)
+            sub_canvas.image = bg_img
+
+        # Set colors for winner/loser background
+        if match_data['1_result'] == 1:
+            left_color = "#00008B"
+            right_color = "#FFB6C1"
+        else:
+            left_color = "#ADD8E6"
+            right_color = "#8B0000"
+
+        sub_canvas.create_rectangle(0, 0, 100, row_height, fill=left_color, outline="")
+        sub_canvas.create_rectangle(row_width, 0, row_width+100, row_height, fill=right_color, outline="")
+
+        for i in range(5):
+            x_pos = 25
+            y_pos = 15 + (i * 55)
+            self.create_hero_icon(sub_canvas, match_data, i, x_pos, y_pos)
+
+        for i in range(5, 10):
+            x_pos = row_width+25
+            y_pos = 15 + ((i - 5) * 55)
+            self.create_hero_icon(sub_canvas, match_data, i, x_pos, y_pos)
+
+        text_id = sub_canvas.create_text(400, 10, text=f"\n"
+                                                       f"{match_data['date']}\n"
+                                                       f"{match_data['gameMode']}: {match_data['map']}\n"
+                                                       f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
+                                                       f"{get_winner(match_data['1_result'])}\n"
+                                                       f"{match_data['1_name']}       {match_data['6_name']}\n"
+                                                       f"{match_data['2_name']}       {match_data['7_name']}\n"
+                                                       f"{match_data['3_name']}       {match_data['8_name']}\n"
+                                                       f"{match_data['4_name']}       {match_data['9_name']}\n"
+                                                       f"{match_data['5_name']}       {match_data['10_name']}\n",
+                                         fill="white", font=("Segoe UI", 15, "bold"), justify="center", anchor="n")
+
+        sub_canvas.bind("<Button-1>", lambda e, match=match_data: self.set_selected_match(match))
+
+
+    def on_label_click(self, event, match_data):
+        label = event.widget
+        original_bg = label.cget("bg")
+
+        def reset_bg():
+            label.configure(bg=original_bg)
+
+        label.configure(bg="yellow")
+        self.root.after(100, reset_bg)  # Reset the color after 100ms
+
+        # Perform any other actions you want on click
+        self.set_selected_match(match_data)
+
+    def set_selected_match(self, match):
+        self.selected_match = match
+        print(f"Selected match: {self.selected_match}")
 
     def refresh_rows(self):
         self.set_limit()
@@ -219,30 +253,35 @@ class RecapperGui:
         self.hide_loading_screen()
 
     def set_selected_match(self, match):
-        self.selected_match = match
-        print(self.selected_match)
-
-        self.refresh_tables()
+        if self.selected_match != match:
+            self.selected_match = match
+            self.refresh_tables()
         return
 
-    def create_hero_icon(self, container, match_data, index):
+    def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = clean_string(match_data[f"{index + 1}_hero"])
         image_path = f"heroes-talents/images/heroes/{hero_name}.png"
 
-        border_color = "blue"
-        if index >= 5:
-            border_color = "red"
-        circular_image = create_circular_image(image_path, border_color=border_color)
+        border_color = "blue" if index < 5 else "red"
+        img = self.draw_image(image_path, border_color=border_color, shape="circle")
 
-        image_button = tk.Button(container, image=circular_image,
-                                 command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='0')
-        image_button.image = circular_image
+        image_button = tk.Button(canvas, highlightcolor=border_color, image=img, command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
+        image_button.image = img
         ToolTip(image_button, msg=match_data[f"{index + 1}_name"], delay=0.5)
 
-        if index == 5:
-            image_button.pack(side=tk.LEFT, padx=(50, 10))
+        if index < 5:
+            canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
         else:
-            image_button.pack(side=tk.LEFT, padx=10)
+            canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
+
+    def reposition_red_icons(self, canvas, window_id, index, y_pos):
+        canvas_width = canvas.winfo_width()
+
+        icon_width = 50
+        icon_spacing = 60
+        icon_start_red_x = canvas_width - (icon_spacing * (10 - index)) + (icon_spacing - icon_width) // 2
+
+        canvas.coords(window_id, icon_start_red_x, y_pos)
 
     def on_hero_click(self, hero_name):
         print(f"Hero clicked: {hero_name}")
@@ -250,7 +289,12 @@ class RecapperGui:
     def create_tab2_content(self):
 
         self.tab2_canvas = tk.Canvas(self.tab2, relief=tk.SUNKEN)
-        self.tab2_canvas.pack(fill=tk.BOTH, expand=True)
+        self.tab2_canvas.pack(fill=tk.BOTH)
+
+        if self.selected_match is not None:
+            self.refresh_tab2_table()
+
+    def refresh_tab2_table(self):
 
         label = tk.Label(self.tab2_canvas, text=f"{self.selected_match.get('date')}\n"
                                                 f"{self.selected_match.get('gameMode')}: {self.selected_match.get('map')}\n"
@@ -259,30 +303,25 @@ class RecapperGui:
                          )
         label.pack(pady=20, padx=20)
 
-        self.tab2_frame = tk.Frame(self.tab2_canvas)
-        self.tab2_frame.pack(fill=tk.BOTH, expand=True)
-
         columns = ["Number", "Player", "Hero", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing",
                    "Damage Taken", "XP Contribution"]
         column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
+
+        self.tab2_frame = tk.Frame(self.tab2_canvas)
+        self.tab2_frame.pack(fill=tk.BOTH, expand=True)
 
         self.tab2_tree = tk.ttk.Treeview(self.tab2_frame, columns=columns, show="tree headings")
         self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         for col, width in zip(columns, column_widths):
-            self.tab2_tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab2_tree, tab_sort_state=self.tab2_sort_state))
+            self.tab2_tree.heading(col, text=col,
+                                   command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab2_tree,
+                                                                                tab_sort_state=self.tab2_sort_state))
             self.tab2_tree.column(col, anchor="center", width=width, )
 
         scrollbar = tk.ttk.Scrollbar(self.tab2_frame, orient=tk.VERTICAL, command=self.tab2_tree.yview)
         self.tab2_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.refresh_tab2_table()
-
-    def refresh_tab2_table(self):
-
-        if not self.selected_match:
-            return
 
         match_data = self.selected_match
 
@@ -301,10 +340,10 @@ class RecapperGui:
             clean_hero_name = clean_string(hero_name)
             row = [
                 i,
-                match_data.get(f"{prefix}name"),
+                match_data.get(f"{prefix}battletag"),
                 match_data.get(f"{prefix}hero", ""),
                 match_data.get(f"{prefix}SoloKill", 0),
-                match_data.get(f"{prefix}Takedowns", 0),
+                match_data.get(f"{prefix}Assists", 0),
                 match_data.get(f"{prefix}Deaths", 0),
                 match_data.get(f"{prefix}HeroDamage", 0),
                 match_data.get(f"{prefix}SiegeDamage", 0),
@@ -316,16 +355,18 @@ class RecapperGui:
 
             image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
 
-            img = create_circular_image(image_path, border_width=0, size=40)
+            img = self.draw_image(image_path, border_width=0, size=40)
             self.tab2_hero_images[clean_hero_name] = img
 
             if i <= 5:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name], tags=('blue_row',))
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name],
+                                      tags=('blue_row',))
             else:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name], tags=('red_row',))
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name],
+                                      tags=('red_row',))
 
             self.tab2_tree.heading('#0', text='Icon', anchor='center')
-            self.tab2_tree.column('#0',width=20)
+            self.tab2_tree.column('#0', width=20)
 
         self.tab2_canvas.update_idletasks()
 
@@ -342,7 +383,6 @@ class RecapperGui:
 
         tab_sort_state[col] = not tab_sort_state.get(col, True)
 
-        # Update the column heading to indicate sorting direction
         for column in tab_tree["columns"]:
             if column == col:
                 direction = "▲" if tab_sort_state[col] else "▼"
@@ -351,10 +391,56 @@ class RecapperGui:
                 tab_tree.heading(column, text=column)
 
     def refresh_tables(self):
+
         for widget in self.tab2_canvas.winfo_children():
             widget.destroy()
+        self.tab2_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self.refresh_tab2_table()
 
     def create_tab3_content(self):
+
+        # todo from here until next todo block should be its own function, called by tab3 when a button is clicked
+
+        asdf = True
+        if asdf:
+            with open('heroes-talents/hero/genji.json', 'r') as f:
+                hero_talents = json.load(f)
+
+            talent = {
+                'icons': [],
+                'names': [],
+                'descriptions': [],
+                'cooldown': [],
+                'games': [],
+                'wins': [],
+                'popularity': [],
+                'winrate': []
+            }
+
+            hero_id = utils.get_id_by_hero('genji')
+
+            for i in range(len(utils.talent_tiers)):
+                for key in talent:
+                    talent[key].append([])
+                tier_i_talents = hero_talents["talents"][utils.talent_tiers[i]]
+                for j in range(len(tier_i_talents)):
+                    talent['icons'][i].append(f"heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
+                    talent['names'][i].append(tier_i_talents[j]['name'])
+                    talent['descriptions'][i].append(tier_i_talents[j]['description'])
+
+                    if tier_i_talents[j].get('cooldown') is not None:
+                        talent['cooldown'][i].append(tier_i_talents[j]['cooldown'])
+                    else:
+                        talent['cooldown'][i].append('')
+
+                    games_played = self.hero_table[hero_id-1]['talentGames'][i][j]
+                    games_won = self.hero_table[hero_id-1]['talentWins'][i][j]
+
+                    talent['games'][i].append(games_played)
+                    talent['wins'][i].append(games_won)
+                    talent['winrate'][i].append(f"{100* round(games_won/games_played, 4) if games_played != 0 else 0}%")
+
+        # todo until here should be own function
 
         label = tk.Label(self.tab3, text="Hero Stats")
         label.pack(pady=20, padx=20)
@@ -365,21 +451,25 @@ class RecapperGui:
         self.tab3_frame = tk.Frame(self.tab3_canvas)
         self.tab3_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence", "Games Played"]
+        columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence",
+                   "Games Played"]
         column_widths = [50, 100, 80, 80, 100, 100, 100, 100, 100, 120]
 
         style = tk.ttk.Style()
-        style.configure("Treeview", rowheight=40)  # Adjust this value as needed
+        style.configure("Treeview", rowheight=40)
 
         scrollbar = tk.Scrollbar(self.tab3_frame, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings", yscrollcommand=scrollbar.set, height=50)
+        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings",
+                                         yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)
 
         for col, width in zip(columns, column_widths):
-            self.tab3_tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab3_tree, tab_sort_state=self.tab3_sort_state))
+            self.tab3_tree.heading(col, text=col,
+                                   command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab3_tree,
+                                                                                tab_sort_state=self.tab3_sort_state))
             self.tab3_tree.column(col, anchor="w", width=width)
 
         ht = self.hero_table
@@ -404,17 +494,17 @@ class RecapperGui:
                 f"{100 * round(pick_rate + ban_rate, 4)}",
                 f"{100 * round(pick_rate, 4)}",
                 f"{100 * round(ban_rate, 4)}",
-                "influence",  # Adjust if 'influence' needs to be calculated
+                "influence",  # need to calculate later
                 games_played
             ]
 
             image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
 
-            img = create_circular_image(image_path, border_width=0, size=40)
+            img = self.draw_image(image_path, border_width=0, size=40)
             self.tab3_hero_images[clean_hero_name] = img
             self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[clean_hero_name])
             self.tab3_tree.heading('#0', text='Icon', anchor='center')
-            self.tab3_tree.column('#0',width=50)
+            self.tab3_tree.column('#0', width=50)
 
         self.tab3_canvas.update_idletasks()
 
@@ -430,6 +520,30 @@ class RecapperGui:
 
         self.tree = tk.ttk.Treeview(self.tab4_frame, column=())
         self.tree.pack(fill=tk.BOTH, expand=True)
+
+    def draw_image(self, image_path: str, border_color: str = "black", border_width: int = 2, size=50, shape="circle"):
+        img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
+
+        mask = Image.new("L", img.size, 0)
+        draw = ImageDraw.Draw(mask)
+
+        if shape == "circle":
+            draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
+            bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+            border_draw = ImageDraw.Draw(bordered_img)
+            border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
+            border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
+        elif shape == "square":
+            draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
+            bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+            border_draw = ImageDraw.Draw(bordered_img)
+            border_draw.rectangle((0, 0, img.size[0], img.size[1]), fill=border_color)
+            border_draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
+        else:
+            return
+
+        bordered_img.paste(img, (0, 0), mask=mask)
+        return ImageTk.PhotoImage(bordered_img)
 
     def set_limit(self):
         self.limit = min(20, len(self.sorted_data))
@@ -488,13 +602,13 @@ class RecapperGui:
 
     def process_sorted_replays(self, paths: list[str]):
         # self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
-        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data, hero_table=self.hero_table)
+        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data,
+                                                                       hero_table=self.hero_table)
         self.refresh_rows()
         self.root.update_idletasks()
 
         # utils.update_player_tables()
 
-    # todo opens a sub-window with a slideshow on how to use basic features
     def open_help_menu(self):
         pass
 

@@ -137,8 +137,6 @@ def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: boo
 
             match_data.update(player_data_combined)
 
-            # print(match_data)
-
             sorted_dict[match_data["rawDate"]] = match_data
 
             # del match_data["rawDate"]
@@ -201,8 +199,12 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
             # updating hero_table
 
             # getting heroes in the game
+
             match_heroes = [0] * 10
             winner = match_data["1_result"]
+
+            # used for talent stats - updated if both teams reach a certain talent tier
+            min_level = int(min(match_data['levelRed'], match_data['levelBlue']))
 
             for i in range(1, 1 + len(match_heroes)):
                 print(match_data[f"{i}_hero"])
@@ -224,6 +226,8 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                     if selected_talent == -1:
                         break
                     ht['talentGames'][j - 1][selected_talent] += 1
+                    if min_level >= int(utils.talent_tiers[j - 1]):
+                        ht['talentNormalizedGames'][j - 1][selected_talent] += 1
 
             # updating ally and enemy hero games
 
@@ -253,8 +257,6 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 r1 += 5
                 r2 += 5
 
-            talent_thresholds = [1, 4, 7, 10, 13, 16, 20]
-
             for i in range(r1, r2):
                 ht = hero_table[match_heroes[i - 1] - 1]
                 ht['gamesWon'] += 1
@@ -269,8 +271,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
 
                     # normalized talent wins
 
-                    if int(match_data['levelRed']) >= talent_thresholds[j - 1] and int(match_data['levelBlue']) >= \
-                            talent_thresholds[j - 1]:
+                    if min_level >= int(utils.talent_tiers[j - 1]):
                         ht['talentNormalizedWins'][j - 1][selected_talent] += 1
 
             # updating hero bans

@@ -7,7 +7,7 @@ from unidecode import unidecode
 import string
 import copy
 
-default_wanted_keys = ['Takedowns', 'Deaths', 'TownKills', "SoloKill", 'Assists', "Level",
+default_wanted_keys = ['Deaths', 'TownKills', "SoloKill", 'Assists', "Level",
                        'TeamTakedowns', 'ExperienceContribution', 'Healing', "SiegeDamage", "StructureDamage",
                        'MinionDamage', 'HeroDamage', 'MercCampCaptures', 'SelfHealing', 'TimeSpentDead',
                        'TimeCCdEnemyHeroes', 'CreepDamage', 'SummonDamage', 'Tier1Talent', 'Tier2Talent', 'Tier3Talent',
@@ -19,7 +19,7 @@ default_wanted_keys = ['Takedowns', 'Deaths', 'TownKills', "SoloKill", 'Assists'
                        'TimeOnPoint', 'CageUnlocksInterrupted', 'PhysicalDamage', 'SpellDamage', 'Multikill',
                        'MinionKills', 'RegenGlobes', 'TimeInTemple']
 
-essential_keys = ['Takedowns', 'Deaths', 'TownKills', "SoloKill", 'Assists', "Level", 'TeamTakedowns',
+essential_keys = ['Deaths', 'TownKills', "SoloKill", 'Assists', "Level", 'TeamTakedowns',
                   'ExperienceContribution', 'Healing', "SiegeDamage", 'MinionDamage', 'HeroDamage', 'MercCampCaptures',
                   'SelfHealing', 'TimeSpentDead', 'TimeCCdEnemyHeroes', 'Tier1Talent', 'Tier2Talent', 'Tier3Talent',
                   'Tier4Talent', 'Tier5Talent', 'Tier6Talent', 'Tier7Talent', 'DamageTaken', 'PhysicalDamage',
@@ -1140,6 +1140,8 @@ hero_data = [
     }
 ]
 
+talent_tiers = ["1", "4", "7", "10", "13", "16", "20"]
+
 altname_to_shortname = {hero['alternativeName']: hero['shortName'] for hero in hero_data}
 
 def wald_interval(x, n, confidence=0.95):
@@ -1278,6 +1280,8 @@ def create_empty_hero_table(create_json=False):
         hero['talentWins'] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0],
                               [0, 0, 0, 0, 0]]
         # currently doing this based on levels, maybe better to brute force?
+        hero['talentNormalizedGames'] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0],
+                                         [0, 0, 0, 0], [0, 0, 0, 0, 0]]
         hero['talentNormalizedWins'] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0],
                                         [0, 0, 0, 0], [0, 0, 0, 0, 0]]
         hero['allyHeroGames'] = [0] * 90

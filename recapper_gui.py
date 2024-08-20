@@ -14,7 +14,6 @@ from tktooltip import ToolTip
 
 import utils
 import database
-from utils import clean_string, test_paths, get_winner
 
 
 class RecapperGui:
@@ -82,7 +81,7 @@ class RecapperGui:
             with open(f"{self.recapper_dir}/gui_output.json", 'r') as f:
                 self.sorted_data = utils.load_partial_json(f"{self.recapper_dir}/gui_output.json")
         except FileNotFoundError:
-            self.sorted_data = SortedDict()
+            self.sorted_data = SortedDict(lambda x: -x)
 
         try:
             with open(f"{self.recapper_dir}/hero_table.json", 'r') as f:
@@ -177,7 +176,7 @@ class RecapperGui:
         row_width = 700
         match_data = database.get_nth_value(self.sorted_data, row_number)
 
-        bg_img_src = f"{self.dist_prefix}images/{clean_string(match_data['map'])}.png"
+        bg_img_src = f"{self.dist_prefix}images/{utils.clean_string(match_data['map'])}.png"
 
         try:
             original_bg_img = Image.open(bg_img_src)
@@ -225,7 +224,7 @@ class RecapperGui:
                                                        f"{match_data['date']}\n"
                                                        f"{match_data['gameMode']}: {match_data['map']}\n"
                                                        f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
-                                                       f"{get_winner(match_data['1_result'])}\n"
+                                                       f"{utils.get_winner(match_data['1_result'])}\n"
                                                        f"{match_data['1_name']}       {match_data['6_name']}\n"
                                                        f"{match_data['2_name']}       {match_data['7_name']}\n"
                                                        f"{match_data['3_name']}       {match_data['8_name']}\n"
@@ -257,7 +256,7 @@ class RecapperGui:
         return
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
-        hero_name = clean_string(match_data[f"{index + 1}_hero"])
+        hero_name = utils.clean_hero_name(match_data[f"{index + 1}_hero"])
         image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue" if index < 5 else "red"
@@ -297,7 +296,7 @@ class RecapperGui:
         label = tk.Label(self.tab2_canvas, text=f"{self.selected_match.get('date')}\n"
                                                 f"{self.selected_match.get('gameMode')}: {self.selected_match.get('map')}\n"
                                                 f"{str(datetime.timedelta(seconds=int(self.selected_match.get('duration')) - 45))}\n"
-                                                f"{get_winner(self.selected_match.get('1_result'))}\n"
+                                                f"{utils.get_winner(self.selected_match.get('1_result'))}\n"
                          )
         label.pack(pady=20, padx=20)
 
@@ -334,8 +333,7 @@ class RecapperGui:
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
-            hero_name = match_data.get(f"{prefix}hero")
-            clean_hero_name = clean_string(hero_name)
+            hero_name = utils.clean_hero_name(match_data.get(f"{prefix}hero"))
             row = [
                 i,
                 match_data.get(f"{prefix}battletag"),
@@ -351,16 +349,16 @@ class RecapperGui:
             ]
             self.tab2_data.append(row)
 
-            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{clean_hero_name}.png"
+            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
             img = self.draw_image(image_path, border_width=0, size=40)
-            self.tab2_hero_images[clean_hero_name] = img
+            self.tab2_hero_images[hero_name] = img
 
             if i <= 5:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name],
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[hero_name],
                                       tags=('blue_row',))
             else:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[clean_hero_name],
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[hero_name],
                                       tags=('red_row',))
 
             self.tab2_tree.heading('#0', text='Icon', anchor='center')
@@ -482,8 +480,7 @@ class RecapperGui:
             pick_rate = hero.get('gamesPlayed', 0) / total_games if total_games != 0 else 0
             ban_rate = hero.get('gamesBanned', 0) / total_games if total_games != 0 else 0
 
-            hero_name = hero.get("name")
-            clean_hero_name = clean_string(hero_name)
+            hero_name = utils.clean_hero_name(hero.get("name"))
 
             row = [
                 hero_name,
@@ -496,11 +493,11 @@ class RecapperGui:
                 games_played
             ]
 
-            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{clean_hero_name}.png"
+            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
             img = self.draw_image(image_path, border_width=0, size=40)
-            self.tab3_hero_images[clean_hero_name] = img
-            self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[clean_hero_name])
+            self.tab3_hero_images[hero_name] = img
+            self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[hero_name])
             self.tab3_tree.heading('#0', text='Icon', anchor='center')
             self.tab3_tree.column('#0', width=50)
 

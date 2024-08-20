@@ -1,11 +1,8 @@
 from heroprotocol.versions import protocol92264 as protocol
 from datetime import datetime, timedelta
 import json
-from itertools import islice
 import time
 import re
-
-from sortedcontainers import SortedDict
 
 import utils
 from utils import default_wanted_keys, get_as_str

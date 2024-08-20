@@ -1166,19 +1166,33 @@ def erfinv(y):
     return sign * math.sqrt(math.sqrt(term**2 - term2) - term)
 
 
-def clean_string(val: str, remove_spaces=False):
+def clean_string(val: str, remove_spaces=True):
     """
     :param val: any string
     :param remove_spaces: optional parameter on whether to also remove any spaces in the string
     :return: the same string in lower case, without punctuation, and without special characters
     """
     if remove_spaces:
-        return unidecode(val.lower()).translate(val.maketrans('', '', string.punctuation))
-    return unidecode(val.lower()).translate(val.maketrans('', '', string.punctuation)).replace(" ", "")
+        return unidecode(val.lower()).translate(val.maketrans('', '', string.punctuation)).replace(" ", "")
+    return unidecode(val.lower()).translate(val.maketrans('', '', string.punctuation))
+
+
+def clean_hero_name(val: str):
+    """
+    slight work around to heroes-talents using "lostvikings" instead of "thelostvikings", and "chogall" instead of "cho"
+    """
+    hero_name = clean_string(val)
+
+    replacements = {
+        "thelostvikings": "lostvikings",
+        "cho": "chogall"
+    }
+
+    return replacements.get(hero_name, hero_name)
 
 
 def load_partial_json(path, max_entries=50):
-    sorted_data = SortedDict()
+    sorted_data = SortedDict(lambda x: -x)
     try:
         with open(path, 'r') as f:
             parser = ijson.items(f, '')

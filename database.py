@@ -144,11 +144,14 @@ def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: boo
     return sorted_dict
 
 
-def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict, create_json: bool = False,
-                                       hero_table=None):
+def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict, recapper_dir: str, create_json: bool = False,
+                                       hero_table=None, ):
+
+    print(recapper_dir)
+
     if hero_table is None:
         try:
-            with open('hero_table.json', 'r') as f:
+            with open(f"{recapper_dir}/hero_table.json", 'r') as f:
                 hero_table = json.load(f)
         except FileNotFoundError:
             hero_table = utils.create_empty_hero_table()
@@ -286,7 +289,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
 
                 hero_table[match_ban_id - 1]['gamesBanned'] += 1
 
-        with open("hero_table.json", "w") as outfile:
+        with open(f"{recapper_dir}/hero_table.json", "w") as outfile:
             json.dump(hero_table, outfile)
 
     return sorted_dict

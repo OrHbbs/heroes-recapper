@@ -4,6 +4,7 @@ import threading
 import os
 import time
 import tkinter as tk
+import tkinter.ttk as ttk
 import tkinter.filedialog
 import pandas as pd
 import sv_ttk
@@ -11,14 +12,23 @@ from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
 from tktooltip import ToolTip
 
-import database
 import utils
+import database
 from utils import clean_string, test_paths, get_winner
 
 
 class RecapperGui:
 
     def __init__(self, root):
+
+        self.recapper_dir = os.path.join(os.getenv('LOCALAPPDATA'), "Heroes Recapper")
+        os.makedirs(self.recapper_dir, exist_ok=True)
+
+        #todo check if there's a better way to do this (dev vs build difference in paths)
+        if os.path.exists("images/not-found.png"):
+            self.dist_prefix = ""
+        else:
+            self.dist_prefix = "_internal/"
 
         self.bg_img = None
         self.tree = None
@@ -60,7 +70,7 @@ class RecapperGui:
 
         sv_ttk.set_theme("dark")
 
-        self.root.title("Heroes Recapper")
+        self.root.title("Heroes Recapper 0.1")
         self.root.geometry("850x700")
 
         try:
@@ -69,13 +79,13 @@ class RecapperGui:
             self.database = pd.DataFrame()
 
         try:
-            with open('gui_output.json', 'r') as f:
-                self.sorted_data = utils.load_partial_json('gui_output.json')
+            with open(f"{self.recapper_dir}/gui_output.json", 'r') as f:
+                self.sorted_data = utils.load_partial_json(f"{self.recapper_dir}/gui_output.json")
         except FileNotFoundError:
             self.sorted_data = SortedDict()
 
         try:
-            with open('hero_table.json', 'r') as f:
+            with open(f"{self.recapper_dir}/hero_table.json", 'r') as f:
                 self.hero_table = json.load(f)
         except FileNotFoundError:
             self.hero_table = utils.create_empty_hero_table()
@@ -116,7 +126,7 @@ class RecapperGui:
     def create_widgets(self):
         self.create_menu()
 
-        self.notebook = tk.ttk.Notebook(self.root)
+        self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
         self.tab1 = tk.Frame(self.notebook)
@@ -127,7 +137,7 @@ class RecapperGui:
         self.notebook.add(self.tab1, text="Replays")
         self.notebook.add(self.tab2, text="Match Details")
         self.notebook.add(self.tab3, text="Hero Stats")
-        self.notebook.add(self.tab4, text="Testing")
+        self.notebook.add(self.tab4, text="Player Stats")
 
         self.create_tab1_content()
         self.create_tab2_content()
@@ -135,6 +145,9 @@ class RecapperGui:
         self.create_tab4_content()
 
     def create_tab1_content(self):
+        label = tk.Label(self.tab1, text="Filters")
+        label.pack(pady=20, padx=20)
+
         self.tab1_canvas = tk.Canvas(self.tab1, relief=tk.SUNKEN)
         self.tab1_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -164,7 +177,7 @@ class RecapperGui:
         row_width = 700
         match_data = database.get_nth_value(self.sorted_data, row_number)
 
-        bg_img_src = f"images/{clean_string(match_data['map'])}.png"
+        bg_img_src = f"{self.dist_prefix}images/{clean_string(match_data['map'])}.png"
 
         try:
             original_bg_img = Image.open(bg_img_src)
@@ -188,7 +201,6 @@ class RecapperGui:
             self.bg_img_id = sub_canvas.create_image(0, 0, anchor="nw", image=bg_img)
             sub_canvas.image = bg_img
 
-        # Set colors for winner/loser background
         if match_data['1_result'] == 1:
             left_color = "#00008B"
             right_color = "#FFB6C1"
@@ -223,20 +235,6 @@ class RecapperGui:
 
         sub_canvas.bind("<Button-1>", lambda e, match=match_data: self.set_selected_match(match))
 
-
-    def on_label_click(self, event, match_data):
-        label = event.widget
-        original_bg = label.cget("bg")
-
-        def reset_bg():
-            label.configure(bg=original_bg)
-
-        label.configure(bg="yellow")
-        self.root.after(100, reset_bg)  # Reset the color after 100ms
-
-        # Perform any other actions you want on click
-        self.set_selected_match(match_data)
-
     def set_selected_match(self, match):
         self.selected_match = match
         print(f"Selected match: {self.selected_match}")
@@ -260,7 +258,7 @@ class RecapperGui:
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = clean_string(match_data[f"{index + 1}_hero"])
-        image_path = f"heroes-talents/images/heroes/{hero_name}.png"
+        image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue" if index < 5 else "red"
         img = self.draw_image(image_path, border_color=border_color, shape="circle")
@@ -310,7 +308,7 @@ class RecapperGui:
         self.tab2_frame = tk.Frame(self.tab2_canvas)
         self.tab2_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.tab2_tree = tk.ttk.Treeview(self.tab2_frame, columns=columns, show="tree headings")
+        self.tab2_tree = ttk.Treeview(self.tab2_frame, columns=columns, show="tree headings")
         self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         for col, width in zip(columns, column_widths):
@@ -319,7 +317,7 @@ class RecapperGui:
                                                                                 tab_sort_state=self.tab2_sort_state))
             self.tab2_tree.column(col, anchor="center", width=width, )
 
-        scrollbar = tk.ttk.Scrollbar(self.tab2_frame, orient=tk.VERTICAL, command=self.tab2_tree.yview)
+        scrollbar = ttk.Scrollbar(self.tab2_frame, orient=tk.VERTICAL, command=self.tab2_tree.yview)
         self.tab2_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
@@ -353,7 +351,7 @@ class RecapperGui:
             ]
             self.tab2_data.append(row)
 
-            image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
+            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{clean_hero_name}.png"
 
             img = self.draw_image(image_path, border_width=0, size=40)
             self.tab2_hero_images[clean_hero_name] = img
@@ -401,7 +399,7 @@ class RecapperGui:
 
         # todo from here until next todo block should be its own function, called by tab3 when a button is clicked
 
-        asdf = True
+        asdf = False
         if asdf:
             with open('heroes-talents/hero/genji.json', 'r') as f:
                 hero_talents = json.load(f)
@@ -424,7 +422,7 @@ class RecapperGui:
                     talent[key].append([])
                 tier_i_talents = hero_talents["talents"][utils.talent_tiers[i]]
                 for j in range(len(tier_i_talents)):
-                    talent['icons'][i].append(f"heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
+                    talent['icons'][i].append(f"{self.dist_prefix}/heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
                     talent['names'][i].append(tier_i_talents[j]['name'])
                     talent['descriptions'][i].append(tier_i_talents[j]['description'])
 
@@ -455,13 +453,13 @@ class RecapperGui:
                    "Games Played"]
         column_widths = [50, 100, 80, 80, 100, 100, 100, 100, 100, 120]
 
-        style = tk.ttk.Style()
+        style = ttk.Style()
         style.configure("Treeview", rowheight=40)
 
         scrollbar = tk.Scrollbar(self.tab3_frame, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = tk.ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings",
+        self.tab3_tree = ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings",
                                          yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)
@@ -498,7 +496,7 @@ class RecapperGui:
                 games_played
             ]
 
-            image_path = f"heroes-talents/images/heroes/{clean_hero_name}.png"
+            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{clean_hero_name}.png"
 
             img = self.draw_image(image_path, border_width=0, size=40)
             self.tab3_hero_images[clean_hero_name] = img
@@ -555,7 +553,7 @@ class RecapperGui:
 
         dat = dict(self.sorted_data)
 
-        with open("gui_output.json", "w") as outfile:
+        with open(f"{self.recapper_dir}/gui_output.json", "w") as outfile:
             json.dump(dat, outfile)
         root.destroy()
 
@@ -600,9 +598,9 @@ class RecapperGui:
         self.refresh_rows()
         self.root.update_idletasks()
 
-    def process_sorted_replays(self, paths: list[str]):
+    def process_sorted_replays(self, paths: list[str], ):
         # self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
-        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data,
+        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir,
                                                                        hero_table=self.hero_table)
         self.refresh_rows()
         self.root.update_idletasks()

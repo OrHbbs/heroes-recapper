@@ -187,9 +187,5 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
             with open('data.json', 'w', encoding='utf-8') as f:
                 json.dump(output, f, ensure_ascii=False, indent=4)
 
-        if True:
-            with open('more-data.json', 'a', encoding='utf-8') as f:
-                json.dump(output, f, ensure_ascii=False, indent=4)
-
         return output
     return {}

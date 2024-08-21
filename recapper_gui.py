@@ -5,6 +5,7 @@ import os
 import time
 import tkinter as tk
 import tkinter.ttk as ttk
+import tkinter.filedialog
 import sv_ttk
 from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
@@ -13,7 +14,7 @@ from tktooltip import ToolTip
 import utils
 import database
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 class RecapperGui:

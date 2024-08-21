@@ -8,15 +8,11 @@ Current version is 0.1.1
 
 To build this app, download the repository, open terminal, navigate to the project's root directory, and paste and run the following line into terminal
 
-'''
-pip install -r requirements.txt
-'''
+`pip install -r requirements.txt`
 
 Once the dependencies have been installed, you can paste and run the following line.
 
-'''
-pyinstaller --collect-data sv_ttk --add-data "heroes-talents/hero/*;heroes-talents/hero" --add-data "heroes-talents/images/heroes*;heroes-talents/images/heroes" --add-data "heroes-talents/images/talents*;heroes-talents/images/talents" --add-data "images/*;images" --noconfirm --name "Heroes Recapper" recapper_gui.py
-'''
+`pyinstaller --collect-data sv_ttk --add-data "heroes-talents/hero/*;heroes-talents/hero" --add-data "heroes-talents/images/heroes*;heroes-talents/images/heroes" --add-data "heroes-talents/images/talents*;heroes-talents/images/talents" --add-data "images/*;images" --noconfirm --name "Heroes Recapper" recapper_gui.py`
 
 This will build the app into dist/Heroes Recapper. You can move this folder anywhere you like (make sure the contents inside - 'Heroes Recapper.exe' and the _internal subdirectory - are the same though).
 

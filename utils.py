@@ -44,10 +44,19 @@ game_mode_strings = {
 map_ids = {
     1000: 'Alterac Pass',
     1001: 'Battlefield of Eternity',
-    1100: 'Hanamura Temple',
-    1101: 'Warhead Junction',
-    1102: 'Blackhearts Bay',
-    1103: 'Haunted Mines',
+    1002: 'Braxis Holdout',
+    1003: 'Cursed Hollow',
+    1004: 'Dragon Shire',
+    1005: 'Garden of Terror',
+    1006: 'Infernal Shrines',
+    1007: 'Sky Temple',
+    1008: 'Tomb of the Spider Queen',
+    1009: 'Towers of Doom',
+    1010: 'Volskaya Foundry',
+    1100: 'Blackhearts Bay',
+    1101: 'Haunted Mines',
+    1102: 'Hanamura Temple',
+    1103: 'Warhead Junction',
     2000: 'Braxis Outpost',
     2001: 'Industrial District',
     2002: 'Lost Cavern',
@@ -1177,18 +1186,19 @@ def clean_string(val: str, remove_spaces=True):
     return unidecode(val.lower()).translate(val.maketrans('', '', string.punctuation))
 
 
-def clean_hero_name(val: str):
+def clean_entity_name(val: str):
     """
     slight work around to heroes-talents using "lostvikings" instead of "thelostvikings", and "chogall" instead of "cho"
     """
-    hero_name = clean_string(val)
+    name = clean_string(val)
 
     replacements = {
         "thelostvikings": "lostvikings",
-        "cho": "chogall"
+        "cho": "chogall",
+        "braxisoutpost": "braxisholdout"
     }
 
-    return replacements.get(hero_name, hero_name)
+    return replacements.get(name, name)
 
 
 def load_partial_json(path, max_entries=50):

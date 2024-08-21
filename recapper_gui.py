@@ -5,8 +5,6 @@ import os
 import time
 import tkinter as tk
 import tkinter.ttk as ttk
-import tkinter.filedialog
-import pandas as pd
 import sv_ttk
 from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
@@ -14,6 +12,8 @@ from tktooltip import ToolTip
 
 import utils
 import database
+
+__version__ = "0.1.1"
 
 
 class RecapperGui:
@@ -23,7 +23,7 @@ class RecapperGui:
         self.recapper_dir = os.path.join(os.getenv('LOCALAPPDATA'), "Heroes Recapper")
         os.makedirs(self.recapper_dir, exist_ok=True)
 
-        #todo check if there's a better way to do this (dev vs build difference in paths)
+        # todo check if there's a better way to do this (dev vs build difference in paths)
         if os.path.exists("images/not-found.png"):
             self.dist_prefix = ""
         else:
@@ -69,13 +69,13 @@ class RecapperGui:
 
         sv_ttk.set_theme("dark")
 
-        self.root.title("Heroes Recapper 0.1")
+        self.root.title(f"Heroes Recapper {__version__}")
         self.root.geometry("850x700")
 
-        try:
-            self.database = database.load_from_pickle("new_pickle.pkl")
-        except FileNotFoundError:
-            self.database = pd.DataFrame()
+        # try:
+        #     self.database = database.load_from_pickle("new_pickle.pkl")
+        # except FileNotFoundError:
+        #     self.database = pd.DataFrame()
 
         try:
             with open(f"{self.recapper_dir}/gui_output.json", 'r') as f:
@@ -208,7 +208,7 @@ class RecapperGui:
             right_color = "#8B0000"
 
         sub_canvas.create_rectangle(0, 0, 100, row_height, fill=left_color, outline="")
-        sub_canvas.create_rectangle(row_width, 0, row_width+100, row_height, fill=right_color, outline="")
+        sub_canvas.create_rectangle(row_width, 0, row_width + 100, row_height, fill=right_color, outline="")
 
         for i in range(5):
             x_pos = 25
@@ -216,7 +216,7 @@ class RecapperGui:
             self.create_hero_icon(sub_canvas, match_data, i, x_pos, y_pos)
 
         for i in range(5, 10):
-            x_pos = row_width+25
+            x_pos = row_width + 25
             y_pos = 15 + ((i - 5) * 55)
             self.create_hero_icon(sub_canvas, match_data, i, x_pos, y_pos)
 
@@ -233,10 +233,6 @@ class RecapperGui:
                                          fill="white", font=("Segoe UI", 15, "bold"), justify="center", anchor="n")
 
         sub_canvas.bind("<Button-1>", lambda e, match=match_data: self.set_selected_match(match))
-
-    def set_selected_match(self, match):
-        self.selected_match = match
-        print(f"Selected match: {self.selected_match}")
 
     def refresh_rows(self):
         self.set_limit()
@@ -256,13 +252,14 @@ class RecapperGui:
         return
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
-        hero_name = utils.clean_hero_name(match_data[f"{index + 1}_hero"])
+        hero_name = utils.clean_entity_name(match_data[f"{index + 1}_hero"])
         image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue" if index < 5 else "red"
         img = self.draw_image(image_path, border_color=border_color, shape="circle")
 
-        image_button = tk.Button(canvas, highlightcolor=border_color, image=img, command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
+        image_button = tk.Button(canvas, highlightcolor=border_color, image=img,
+                                 command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
         image_button.image = img
         ToolTip(image_button, msg=match_data[f"{index + 1}_name"], delay=0.5)
 
@@ -333,7 +330,7 @@ class RecapperGui:
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
-            hero_name = utils.clean_hero_name(match_data.get(f"{prefix}hero"))
+            hero_name = utils.clean_entity_name(match_data.get(f"{prefix}hero"))
             row = [
                 i,
                 match_data.get(f"{prefix}battletag"),
@@ -420,7 +417,8 @@ class RecapperGui:
                     talent[key].append([])
                 tier_i_talents = hero_talents["talents"][utils.talent_tiers[i]]
                 for j in range(len(tier_i_talents)):
-                    talent['icons'][i].append(f"{self.dist_prefix}/heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
+                    talent['icons'][i].append(
+                        f"{self.dist_prefix}/heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
                     talent['names'][i].append(tier_i_talents[j]['name'])
                     talent['descriptions'][i].append(tier_i_talents[j]['description'])
 
@@ -429,12 +427,13 @@ class RecapperGui:
                     else:
                         talent['cooldown'][i].append('')
 
-                    games_played = self.hero_table[hero_id-1]['talentGames'][i][j]
-                    games_won = self.hero_table[hero_id-1]['talentWins'][i][j]
+                    games_played = self.hero_table[hero_id - 1]['talentGames'][i][j]
+                    games_won = self.hero_table[hero_id - 1]['talentWins'][i][j]
 
                     talent['games'][i].append(games_played)
                     talent['wins'][i].append(games_won)
-                    talent['winrate'][i].append(f"{100* round(games_won/games_played, 4) if games_played != 0 else 0}%")
+                    talent['winrate'][i].append(
+                        f"{100 * round(games_won / games_played, 4) if games_played != 0 else 0}%")
 
         # todo until here should be own function
 
@@ -458,7 +457,7 @@ class RecapperGui:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.tab3_tree = ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings",
-                                         yscrollcommand=scrollbar.set, height=50)
+                                      yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)
 
@@ -480,7 +479,7 @@ class RecapperGui:
             pick_rate = hero.get('gamesPlayed', 0) / total_games if total_games != 0 else 0
             ban_rate = hero.get('gamesBanned', 0) / total_games if total_games != 0 else 0
 
-            hero_name = utils.clean_hero_name(hero.get("name"))
+            hero_name = utils.clean_entity_name(hero.get("name"))
 
             row = [
                 hero_name,
@@ -513,7 +512,7 @@ class RecapperGui:
         self.tab4_frame = tk.Frame(self.tab4_canvas)
         self.tab4_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.tree = tk.ttk.Treeview(self.tab4_frame, column=())
+        self.tree = tk.ttk.Treeview(self.tab4_frame)
         self.tree.pack(fill=tk.BOTH, expand=True)
 
     def draw_image(self, image_path: str, border_color: str = "black", border_width: int = 2, size=50, shape="circle"):
@@ -529,7 +528,8 @@ class RecapperGui:
             border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
             border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
         elif shape == "square":
-            draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
+            draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width),
+                           fill=255)
             bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
             border_draw = ImageDraw.Draw(bordered_img)
             border_draw.rectangle((0, 0, img.size[0], img.size[1]), fill=border_color)
@@ -590,15 +590,15 @@ class RecapperGui:
 
         print(f"processing time: {time.time() - start}")
 
-    def process_replays(self, paths: list[str]):
-        self.database = database.add_to_container(paths=paths, matches_database=self.database)
-        self.refresh_rows()
-        self.root.update_idletasks()
+    # def process_replays(self, paths: list[str]):
+    #     self.database = database.add_to_container(paths=paths, matches_database=self.database)
+    #     self.refresh_rows()
+    #     self.root.update_idletasks()
 
     def process_sorted_replays(self, paths: list[str], ):
         # self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
-        self.sorted_data = database.add_to_container_and_update_tables(paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir,
-                                                                       hero_table=self.hero_table)
+        self.sorted_data = (database.add_to_container_and_update_tables(
+            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table))
         self.refresh_rows()
         self.root.update_idletasks()
 

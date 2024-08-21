@@ -18,6 +18,10 @@ This will build the app into dist/Heroes Recapper. You can move this folder anyw
 
 Make sure you have python 3 installed. This app is created in python 3.11, so it may or may not work with earlier or later versions of python.
 
+# Download
+
+Alternatively, just download the most recent release here: https://github.com/OrHbbs/heroes-recapper/releases/
+
 # Known issues
 
 In order for the app to save processed replays, you must exit the app using File -> Exit. Do not just close the app.

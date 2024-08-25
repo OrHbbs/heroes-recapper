@@ -16,46 +16,31 @@ from tkinter import messagebox
 import utils
 import database
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 class RecapperGui:
+    recapper_dir = os.path.join(os.getenv('LOCALAPPDATA'), "Heroes Recapper")
+
+    # todo check if there's a better way to do this (dev vs build difference in paths)
+    if os.path.exists("images/not-found.png"):
+        dist_prefix = ""
+    else:
+        dist_prefix = "_internal/"
+
+    selected_match = None
 
     def __init__(self, root):
 
-        self.recapper_dir = os.path.join(os.getenv('LOCALAPPDATA'), "Heroes Recapper")
         os.makedirs(self.recapper_dir, exist_ok=True)
-
-        # todo check if there's a better way to do this (dev vs build difference in paths)
-        if os.path.exists("images/not-found.png"):
-            self.dist_prefix = ""
-        else:
-            self.dist_prefix = "_internal/"
 
         self.bg_img = None
         self.tree = None
-        self.tab2_hero_images = {}
-        self.tab3_hero_images = {}
 
-        self.tab1_canvas = None
-        self.tab2_canvas = None
-        self.tab3_canvas = None
-        self.tab4_canvas = None
-
-        self.tab2_tree = None
-        self.tab3_tree = None
-
-        self.tab2_data = None
-        self.tab3_data = None
-
-        self.tab2_frame = None
-        self.tab3_frame = None
-        self.tab4_frame = None
-
-        self.tab1 = None
-        self.tab2 = None
-        self.tab3 = None
-        self.tab4 = None
+        self.tab_replays = None
+        self.tab_match_details = None
+        self.tab_hero_stats = None
+        self.tab_player_stats = None
 
         self.inner_frame = None
         self.inner_frame_id = None
@@ -74,10 +59,6 @@ class RecapperGui:
         self.mode_var = None
         self.map_var = None
 
-        self.tab1_replays = None
-        self.tab2_sort_state = {"column": None, "ascending": False}
-        self.tab3_sort_state = {"column": None, "ascending": False}
-
         self.root = root
         self.hero_table = None
 
@@ -87,11 +68,6 @@ class RecapperGui:
         self.root.geometry("850x700")
 
         root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        # try:
-        #     self.database = database.load_from_pickle("new_pickle.pkl")
-        # except FileNotFoundError:
-        #     self.database = pd.DataFrame()
 
         try:
             with open(f"{self.recapper_dir}/replay_data.json", 'r') as f:
@@ -104,22 +80,12 @@ class RecapperGui:
             self.sorted_data = SortedDict(lambda x: -x)
             self.end_position = 0
 
-        try:
-            with open(f"{self.recapper_dir}/hero_table.json", 'r') as f:
-                self.hero_table = json.load(f)
-                shutil.copy(f"{self.recapper_dir}/hero_table.json", f"{self.recapper_dir}/temp_hero_table.json")
-        except FileNotFoundError:
-            self.hero_table = utils.create_empty_hero_table()
-
         self.selected_match = None
-        self.limit = None
-        self.set_limit()
 
         self.create_widgets()
 
     def on_closing(self):
         if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
-
             dat = dict(self.sorted_data)
 
             with open(f"{self.recapper_dir}/replay_data.json", "w") as f:
@@ -156,26 +122,113 @@ class RecapperGui:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.tab1 = tk.Frame(self.notebook)
-        self.tab2 = tk.Frame(self.notebook)
-        self.tab3 = tk.Frame(self.notebook)
-        self.tab4 = tk.Frame(self.notebook)
+        self.tab_replays = TabReplays(self.notebook, self.sorted_data, self.notebook)
+        self.tab_match_details = TabMatchDetails(self.notebook)
+        self.tab_hero_stats = TabHeroStats(self.notebook, self.sorted_data)
+        self.tab_player_stats = TabPlayerStats(self.notebook, self.sorted_data)
 
-        self.notebook.add(self.tab1, text="Replays")
-        self.notebook.add(self.tab2, text="Match Details")
-        self.notebook.add(self.tab3, text="Hero Stats")
-        self.notebook.add(self.tab4, text="Player Stats")
+        self.notebook.add(self.tab_replays.frame, text="Replays")
+        self.notebook.add(self.tab_match_details.frame, text="Match Details")
+        self.notebook.add(self.tab_hero_stats.frame, text="Hero Stats")
+        self.notebook.add(self.tab_player_stats.frame, text="Player Stats")
 
-        self.create_tab1_content()
-        self.create_tab2_content()
-        self.create_tab3_content()
-        self.create_tab4_content()
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_selected)
 
-    def create_tab1_content(self):
-        filters_frame = ttk.Frame(self.tab1)
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=40)
+
+    def on_tab_selected(self, event):
+        selected_tab = event.widget.select()
+        selected_tab_widget = self.notebook.nametowidget(selected_tab)
+
+        if selected_tab_widget.winfo_id() == self.tab_match_details.frame.winfo_id():
+            self.tab_match_details.refresh_tables()
+
+    def exit_without_saving(self):
+        print("exiting without saving")
+
+        try:
+            shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
+        except FileNotFoundError:
+            print("temp_hero_table.json not found")
+            pass
+
+        root.destroy()
+
+    def show_loading_screen(self):
+        self.loading_label = tk.Label(self.root, text="Loading...", font=("Helvetica", 16))
+        self.loading_label.pack(pady=20)
+        self.root.update_idletasks()
+
+    def hide_loading_screen(self):
+        if hasattr(self, 'loading_label'):
+            self.loading_label.destroy()
+            delattr(self, 'loading_label')
+        self.root.update_idletasks()
+
+    def select_replay(self):
+        path = [tk.filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])]
+
+        thread = threading.Thread(target=self.process_sorted_replays(paths=path))
+        thread.start()
+        # self.process_replays_containers(paths=[paths])
+
+    def select_directory(self):
+        file_path = tk.filedialog.askdirectory()
+        paths = []
+
+        for root, dirs, files in os.walk(file_path):
+            for file in files:
+                if file.endswith(".StormReplay"):
+                    paths.append(os.path.join(root, file))
+
+        start = time.time()
+        self.show_loading_screen()
+        thread = threading.Thread(target=self.process_sorted_replays(paths=paths))
+        thread.start()
+
+        print(f"processing time: {time.time() - start}")
+        self.hide_loading_screen()
+
+    # def process_replays(self, paths: list[str]):
+    #     self.database = database.add_to_container(paths=paths, matches_database=self.database)
+    #     self.refresh_rows()
+    #     self.root.update_idletasks()
+
+    def process_sorted_replays(self, paths: list[str], ):
+        self.sorted_data = (database.add_to_container_and_update_tables(
+            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table))
+        self.tab_replays.refresh_rows()
+        self.root.update_idletasks()
+
+        # utils.update_player_tables()
+
+    def open_help_menu(self):
+        pass
+
+
+class TabReplays:
+    def __init__(self, parent, sorted_data, tabs):
+        self.replays_canvas = None
+        self.frame = tk.Frame(parent)
+        self.limit = 20
+        self.sorted_data = sorted_data
+        self.tabs = tabs
+
+        self.replay_filters = {
+            'mode': 'all',
+            'maps': 'all',
+            'names': ['any'] * 10,
+            'heroes': ['any'] * 10,
+        }
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        filters_frame = ttk.Frame(self.frame)
         filters_frame.pack(pady=10, padx=10, fill=tk.X)
 
-        # Game mode filters
+        # game mode filters
         modes = ['All', 'Storm League', 'Quick Match', 'Aram']
         mode_label = ttk.Label(filters_frame, text='Game Mode:')
         mode_label.grid(row=0, column=4, padx=10, pady=5)
@@ -205,28 +258,31 @@ class RecapperGui:
         filter_button = ttk.Button(filters_frame, text='Apply Filters', command=self.apply_filters)
         filter_button.grid(row=2, column=8, columnspan=2, pady=10)
 
-        self.tab1_canvas = tk.Canvas(self.tab1, relief=tk.SUNKEN)
-        self.tab1_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.replays_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
+        self.replays_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        scrollbar = ttk.Scrollbar(self.tab1, orient=tk.VERTICAL, command=self.tab1_canvas.yview)
+        scrollbar = ttk.Scrollbar(self.frame, orient=tk.VERTICAL, command=self.replays_canvas.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab1_canvas.configure(yscrollcommand=scrollbar.set, yscrollincrement=328)
+        self.replays_canvas.configure(yscrollcommand=scrollbar.set, yscrollincrement=328)
 
-        self.inner_frame = ttk.Frame(self.tab1_canvas)
+        self.inner_frame = ttk.Frame(self.replays_canvas)
         self.inner_frame.bind("<Configure>",
-                              lambda e: self.tab1_canvas.configure(scrollregion=self.tab1_canvas.bbox("all")))
+                              lambda e: self.replays_canvas.configure(scrollregion=self.replays_canvas.bbox("all")))
 
-        self.inner_frame_id = self.tab1_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        self.inner_frame_id = self.replays_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
 
-        self.tab1_canvas.bind("<Configure>", self.on_canvas_configure)
+        self.replays_canvas.bind("<Configure>", self.on_canvas_configure)
 
         for i in range(min(self.limit, len(self.sorted_data))):
             self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
 
+    def set_limit(self):
+        self.limit = min(40, len(self.sorted_data))
+
     def apply_filters(self):
-        self.tab1_filters['mode'] = self.mode_var.get()
-        self.tab1_filters['maps'] = self.map_var.get()
+        self.replay_filters['mode'] = self.mode_var.get()
+        self.replay_filters['maps'] = self.map_var.get()
 
         filtered_data = []
         num_replays = len(self.sorted_data)
@@ -239,14 +295,13 @@ class RecapperGui:
             i += 1
 
             # filter by game mode
-            if not (self.tab1_filters['mode'] == 'All' or
-                    utils.clean_string(self.tab1_filters['mode']) == utils.clean_string(match_data['gameMode'])):
+            if not (self.replay_filters['mode'] == 'All' or
+                    utils.clean_string(self.replay_filters['mode']) == utils.clean_string(match_data['gameMode'])):
                 continue
 
             # filter by map
-
-            if not (self.tab1_filters['maps'] == 'All' or
-                    utils.clean_string(self.tab1_filters['maps']) == utils.clean_string(match_data['map'])):
+            if not (self.replay_filters['maps'] == 'All' or
+                    utils.clean_string(self.replay_filters['maps']) == utils.clean_string(match_data['map'])):
                 continue
 
             # filter by player names and heroes
@@ -254,8 +309,8 @@ class RecapperGui:
             hero_match = True
 
             for j in range(10):
-                target_name = self.tab1_filters['names'][j]
-                target_hero = self.tab1_filters['heroes'][j]
+                target_name = self.replay_filters['names'][j]
+                target_hero = self.replay_filters['heroes'][j]
 
                 if target_name != 'any' or target_hero != 'any':
                     name_hero_pair_found = False
@@ -265,18 +320,18 @@ class RecapperGui:
                         hero_key = f"{k}_hero"
 
                         if target_name != 'any' and target_hero != 'any':
-                            # Both player and hero must match
+                            # both player and hero must match
                             if utils.clean_string(match_data[player_key]) == target_name and utils.clean_string(
                                     match_data[hero_key]) == target_hero:
                                 name_hero_pair_found = True
                                 break
                         elif target_name != 'any':
-                            # Only player must match
+                            # only player must match
                             if utils.clean_string(match_data[player_key]) == target_name:
                                 name_hero_pair_found = True
                                 break
                         elif target_hero != 'any':
-                            # Only hero must match
+                            # only hero must match
                             if utils.clean_string(match_data[hero_key]) == target_hero:
                                 name_hero_pair_found = True
                                 break
@@ -287,7 +342,6 @@ class RecapperGui:
                         break
 
             if player_match and hero_match:
-
                 filtered_data.append(match_data)
 
             # stop if we reach the end of the sorted_data
@@ -301,7 +355,7 @@ class RecapperGui:
             self.create_row(match_data=filtered_data[j])
 
     def clear_filters(self):
-        self.tab1_filters = {
+        self.replay_filters = {
             'mode': 'all',
             'maps': 'all',
             'players': ['any'] * 10,
@@ -309,7 +363,7 @@ class RecapperGui:
         }
 
     def open_advanced_filters(self):
-        advanced_window = tk.Toplevel(self.tab1)
+        advanced_window = tk.Toplevel(self.frame)
         advanced_window.title("Advanced Filters")
 
         ttk.Label(advanced_window, text="Player").grid(row=0, column=0, padx=10, pady=5)
@@ -317,14 +371,14 @@ class RecapperGui:
 
         heroes = list(utils.hero_ids.values())
 
-        # Initialize StringVars and store them
         self.advanced_name_vars = []
         self.advanced_hero_vars = []
 
         for i in range(10):
             # Pre-populate with existing filters
-            current_name = self.tab1_filters['names'][i] if self.tab1_filters['names'][i] != 'any' else ''
-            current_hero = self.tab1_filters['heroes'][i] if self.tab1_filters['heroes'][i] != 'any' else 'Select a Hero'
+            current_name = self.replay_filters['names'][i] if self.replay_filters['names'][i] != 'any' else ''
+            current_hero = self.replay_filters['heroes'][i] if self.replay_filters['heroes'][
+                                                                   i] != 'any' else 'Select a Hero'
 
             # Player Entry
             name_var = tk.StringVar(value=current_name)
@@ -339,29 +393,28 @@ class RecapperGui:
             hero_combobox.configure(height=10)
             self.advanced_hero_vars.append(hero_var)
 
-        # Save Filters button
-        apply_button = ttk.Button(advanced_window, text='Save Filters', command=lambda: self.save_and_close_advanced_filters(advanced_window))
+        apply_button = ttk.Button(advanced_window, text='Save Filters',
+                                  command=lambda: self.save_and_close_advanced_filters(advanced_window))
         apply_button.grid(row=11, column=0, padx=10, pady=10)
 
-        # Reset Fields button
         reset_button = ttk.Button(advanced_window, text='Reset Fields', command=self.confirm_reset_fields)
         reset_button.grid(row=11, column=1, padx=10, pady=10)
 
     def save_and_close_advanced_filters(self, advanced_window):
-        self.save_advanced_filters()  # Save the filters
-        advanced_window.destroy()     # Close the advanced filter window
+        self.save_advanced_filters()
+        advanced_window.destroy()
 
     def save_advanced_filters(self):
-        # Update self.tab1_filters with the values from advanced filters
         for i in range(10):
             name_value = self.advanced_name_vars[i].get().strip().lower()
             hero_value = self.advanced_hero_vars[i].get().strip().lower()
 
-            self.tab1_filters['names'][i] = name_value if name_value else 'any'
-            self.tab1_filters['heroes'][i] = hero_value if hero_value and hero_value != 'select a hero' else 'any'
+            self.replay_filters['names'][i] = name_value if name_value else 'any'
+            self.replay_filters['heroes'][i] = hero_value if hero_value and hero_value != 'select a hero' else 'any'
 
     def confirm_reset_fields(self):
-        answer = tk.messagebox.askyesno("Reset Fields", "Are you sure you want to reset all fields to their default values?")
+        answer = tk.messagebox.askyesno("Reset Fields",
+                                        "Are you sure you want to reset all fields to their default values?")
         if answer:
             self.reset_fields()
 
@@ -371,19 +424,19 @@ class RecapperGui:
             self.advanced_name_vars[i].set('')
             self.advanced_hero_vars[i].set('Select a Hero')
 
-        self.tab1_filters['names'] = ['any'] * 10
-        self.tab1_filters['heroes'] = ['any'] * 10
+        self.replay_filters['names'] = ['any'] * 10
+        self.replay_filters['heroes'] = ['any'] * 10
 
     def on_canvas_configure(self, event):
         # resizes the subcanvas
         canvas_width = event.width - 10
-        self.tab1_canvas.itemconfig(self.inner_frame_id, width=canvas_width)
+        self.replays_canvas.itemconfig(self.inner_frame_id, width=canvas_width)
 
     def create_row(self, match_data):
         row_height = 350
         row_width = 700
 
-        bg_img_src = f"{self.dist_prefix}images/{utils.clean_entity_name(match_data['map'])}.png"
+        bg_img_src = f"{RecapperGui.dist_prefix}images/{utils.clean_entity_name(match_data['map'])}.png"
 
         try:
             original_bg_img = Image.open(bg_img_src)
@@ -450,20 +503,18 @@ class RecapperGui:
         for i in range(self.limit):
             self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
 
-        self.hide_loading_screen()
-
     def set_selected_match(self, match):
-        if self.selected_match != match:
-            self.selected_match = match
-            self.refresh_tables()
-        return
+        if RecapperGui.selected_match != match:
+            RecapperGui.selected_match = match
+
+        self.tabs.select(1) # setting selected tab to "Match Details"
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = utils.clean_entity_name(match_data[f"{index + 1}_hero"])
-        image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
+        image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue" if index < 5 else "red"
-        img = self.draw_image(image_path, border_color=border_color, shape="circle")
+        img = draw_image(image_path=image_path, border_color=border_color, shape="circle")
 
         image_button = tk.Button(canvas, highlightcolor=border_color, image=img,
                                  command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
@@ -487,25 +538,41 @@ class RecapperGui:
     def on_hero_click(self, hero_name):
         print(f"Hero clicked: {hero_name}")
 
-    def create_tab2_content(self):
 
-        self.tab2_canvas = tk.Canvas(self.tab2, relief=tk.SUNKEN)
-        self.tab2_canvas.pack(fill=tk.BOTH)
+class TabMatchDetails:
+    def __init__(self, parent):
+        self.hero_images = None
+        self.tab2_tree = None
+        self.match_details_sort_state = {"column": None, "ascending": False}
+        self.match_details_subframe = None
+        self.match_details_canvas = None
+        self.frame = tk.Frame(parent)
+        self.create_widgets()
 
-        if self.selected_match is not None:
-            self.refresh_tab2_table()
+    def create_widgets(self):
+
+        self.match_details_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
+        self.match_details_canvas.pack(fill=tk.BOTH)
+
+        if RecapperGui.selected_match is not None:
+            self.refresh_table()
         else:
             pass
             # todo fix this
             # label = tk.Label(self.tab2, text="Select a match in the Replays tab to view its match details")
             # label.pack(pady=20, padx=20)
 
-    def refresh_tab2_table(self):
+    def refresh_table(self):
 
-        label = tk.Label(self.tab2_canvas, text=f"{self.selected_match.get('date')}\n"
-                                                f"{self.selected_match.get('gameMode')}: {self.selected_match.get('map')}\n"
-                                                f"{str(datetime.timedelta(seconds=int(self.selected_match.get('duration')) - 45))}\n"
-                                                f"{utils.get_winner(self.selected_match.get('1_result'))}\n"
+        match_data = RecapperGui.selected_match
+
+        if match_data is None:
+            return
+
+        label = tk.Label(self.match_details_canvas, text=f"{match_data.get('date')}\n"
+                                                         f"{match_data.get('gameMode')}: {match_data.get('map')}\n"
+                                                         f"{str(datetime.timedelta(seconds=int(match_data.get('duration')) - 45))}\n"
+                                                         f"{utils.get_winner(match_data.get('1_result'))}\n"
                          )
         label.pack(pady=20, padx=20)
 
@@ -513,29 +580,26 @@ class RecapperGui:
                    "Damage Taken", "XP Contribution"]
         column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
-        self.tab2_frame = tk.Frame(self.tab2_canvas)
-        self.tab2_frame.pack(fill=tk.BOTH, expand=True)
+        self.match_details_subframe = tk.Frame(self.match_details_canvas)
+        self.match_details_subframe.pack(fill=tk.BOTH, expand=True)
 
-        self.tab2_tree = ttk.Treeview(self.tab2_frame, columns=columns, show="tree headings")
+        self.tab2_tree = ttk.Treeview(self.match_details_subframe, columns=columns, show="tree headings")
         self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         for col, width in zip(columns, column_widths):
             self.tab2_tree.heading(col, text=col,
-                                   command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab2_tree,
-                                                                                tab_sort_state=self.tab2_sort_state))
+                                   command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.tab2_tree,
+                                                                           tab_sort_state=self.match_details_sort_state))
             self.tab2_tree.column(col, anchor="center", width=width, )
 
-        scrollbar = ttk.Scrollbar(self.tab2_frame, orient=tk.VERTICAL, command=self.tab2_tree.yview)
+        scrollbar = ttk.Scrollbar(self.match_details_subframe, orient=tk.VERTICAL, command=self.tab2_tree.yview)
         self.tab2_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        match_data = self.selected_match
 
         for row in self.tab2_tree.get_children():
             self.tab2_tree.delete(row)
 
-        self.tab2_data = []
-        self.tab2_hero_images = {}
+        self.hero_images = {}
 
         self.tab2_tree.tag_configure('blue_row', background='#08075e')
         self.tab2_tree.tag_configure('red_row', background='#731009')
@@ -556,53 +620,47 @@ class RecapperGui:
                 match_data.get(f"{prefix}DamageTaken", 0),
                 match_data.get(f"{prefix}ExperienceContribution", 0)
             ]
-            self.tab2_data.append(row)
 
-            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
+            image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
-            img = self.draw_image(image_path, border_width=0, size=40)
-            self.tab2_hero_images[hero_name] = img
+            img = draw_image(image_path, border_width=0, size=40)
+            self.hero_images[hero_name] = img
 
             if i <= 5:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[hero_name],
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
                                       tags=('blue_row',))
             else:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.tab2_hero_images[hero_name],
+                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
                                       tags=('red_row',))
 
             self.tab2_tree.heading('#0', text='Icon', anchor='center')
             self.tab2_tree.column('#0', width=20)
 
-        self.tab2_canvas.update_idletasks()
-
-    def sort_by_column(self, col, tab_tree, tab_sort_state):
-        data = [(tab_tree.set(child, col), child) for child in tab_tree.get_children('')]
-
-        try:
-            data.sort(key=lambda x: int(x[0]), reverse=tab_sort_state.get(col, True))
-        except ValueError:
-            data.sort(key=lambda x: x[0], reverse=tab_sort_state.get(col, True))
-
-        for index, (val, child) in enumerate(data):
-            tab_tree.move(child, '', index)
-
-        tab_sort_state[col] = not tab_sort_state.get(col, True)
-
-        for column in tab_tree["columns"]:
-            if column == col:
-                direction = "▲" if tab_sort_state[col] else "▼"
-                tab_tree.heading(column, text=f"{col} {direction}")
-            else:
-                tab_tree.heading(column, text=column)
+        self.match_details_canvas.update_idletasks()
 
     def refresh_tables(self):
-
-        for widget in self.tab2_canvas.winfo_children():
+        for widget in self.match_details_canvas.winfo_children():
             widget.destroy()
-        self.tab2_canvas.configure(scrollregion=(0, 0, 0, 0))
-        self.refresh_tab2_table()
+        self.match_details_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self.refresh_table()
 
-    def create_tab3_content(self):
+
+class TabHeroStats:
+    def __init__(self, parent, sorted_data):
+        self.frame = tk.Frame(parent)
+        self.sorted_data = sorted_data
+        self.hero_stats_sort_state = {"column": None, "ascending": False}
+
+        try:
+            with open(f"{RecapperGui.recapper_dir}/hero_table.json", 'r') as f:
+                self.hero_table = json.load(f)
+                shutil.copy(f"{RecapperGui.recapper_dir}/hero_table.json", f"{RecapperGui.recapper_dir}/temp_hero_table.json")
+        except FileNotFoundError:
+            self.hero_table = utils.create_empty_hero_table()
+
+        self.create_widgets()
+
+    def create_widgets(self):
 
         # todo from here until next todo block should be its own function, called by tab3 when a button is clicked
 
@@ -649,14 +707,14 @@ class RecapperGui:
 
         # todo until here should be own function
 
-        label = tk.Label(self.tab3, text="Hero Stats")
+        label = tk.Label(self.frame, text="Hero Stats")
         label.pack(pady=20, padx=20)
 
-        self.tab3_canvas = tk.Canvas(self.tab3, relief=tk.SUNKEN)
+        self.tab3_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
         self.tab3_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.tab3_frame = tk.Frame(self.tab3_canvas)
-        self.tab3_frame.pack(fill=tk.BOTH, expand=True)
+        self.hero_stats_subframe = tk.Frame(self.tab3_canvas)
+        self.hero_stats_subframe.pack(fill=tk.BOTH, expand=True)
 
         columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence",
                    "Games Played"]
@@ -665,18 +723,18 @@ class RecapperGui:
         style = ttk.Style()
         style.configure("Treeview", rowheight=40)
 
-        scrollbar = tk.Scrollbar(self.tab3_frame, orient=tk.VERTICAL)
+        scrollbar = tk.Scrollbar(self.hero_stats_subframe, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = ttk.Treeview(self.tab3_frame, columns=columns, selectmode='none', show="tree headings",
+        self.tab3_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none', show="tree headings",
                                       yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)
 
         for col, width in zip(columns, column_widths):
             self.tab3_tree.heading(col, text=col,
-                                   command=lambda _col=col: self.sort_by_column(col=_col, tab_tree=self.tab3_tree,
-                                                                                tab_sort_state=self.tab3_sort_state))
+                                   command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.tab3_tree,
+                                                                           tab_sort_state=self.hero_stats_sort_state))
             self.tab3_tree.column(col, anchor="w", width=width)
 
         ht = self.hero_table
@@ -704,9 +762,9 @@ class RecapperGui:
                 games_played
             ]
 
-            image_path = f"{self.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
+            image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
-            img = self.draw_image(image_path, border_width=0, size=40)
+            img = draw_image(image_path, border_width=0, size=40)
             self.tab3_hero_images[hero_name] = img
             self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[hero_name])
             self.tab3_tree.heading('#0', text='Icon', anchor='center')
@@ -714,109 +772,71 @@ class RecapperGui:
 
         self.tab3_canvas.update_idletasks()
 
+
+class TabPlayerStats:
+    def __init__(self, parent, sorted_data):
+        self.frame = tk.Frame(parent)
+        self.sorted_data = sorted_data
+
     def create_tab4_content(self):
-        label = tk.Label(self.tab4, text="Player Stats")
+        label = tk.Label(self.frame, text="Player Stats")
         label.pack(pady=20, padx=20)
 
-        self.tab4_canvas = tk.Canvas(self.tab4, relief=tk.SUNKEN)
-        self.tab4_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.player_stats_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
+        self.player_stats_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.tab4_frame = tk.Frame(self.tab4_canvas)
-        self.tab4_frame.pack(fill=tk.BOTH, expand=True)
+        self.player_stats_subframe = tk.Frame(self.player_stats_canvas)
+        self.player_stats_subframe.pack(fill=tk.BOTH, expand=True)
 
-        self.tree = tk.ttk.Treeview(self.tab4_frame)
+        self.tree = tk.ttk.Treeview(self.player_stats_subframe)
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-    def draw_image(self, image_path: str, border_color: str = "black", border_width: int = 2, size=50, shape="circle"):
-        img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
 
-        mask = Image.new("L", img.size, 0)
-        draw = ImageDraw.Draw(mask)
+def draw_image(image_path: str, border_color: str = "black", border_width: int = 2, size=50, shape="circle"):
+    img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
 
-        if shape == "circle":
-            draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
-            bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
-            border_draw = ImageDraw.Draw(bordered_img)
-            border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
-            border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
-        elif shape == "square":
-            draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width),
-                           fill=255)
-            bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
-            border_draw = ImageDraw.Draw(bordered_img)
-            border_draw.rectangle((0, 0, img.size[0], img.size[1]), fill=border_color)
-            border_draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
+    mask = Image.new("L", img.size, 0)
+    draw = ImageDraw.Draw(mask)
+
+    if shape == "circle":
+        draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width), fill=255)
+        bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+        border_draw = ImageDraw.Draw(bordered_img)
+        border_draw.ellipse((0, 0, img.size[0], img.size[1]), fill=border_color)
+        border_draw.ellipse((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
+    elif shape == "square":
+        draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width),
+                       fill=255)
+        bordered_img = Image.new("RGBA", img.size, (255, 255, 255, 0))
+        border_draw = ImageDraw.Draw(bordered_img)
+        border_draw.rectangle((0, 0, img.size[0], img.size[1]), fill=border_color)
+        border_draw.rectangle((border_width, border_width, img.size[0] - border_width, img.size[1] - border_width))
+    else:
+        return
+
+    bordered_img.paste(img, (0, 0), mask=mask)
+    return ImageTk.PhotoImage(bordered_img)
+
+
+def sort_by_column(col, tab_tree, tab_sort_state):
+    data = [(tab_tree.set(child, col), child) for child in tab_tree.get_children('')]
+
+    try:
+        data.sort(key=lambda x: int(x[0]), reverse=tab_sort_state.get(col, True))
+    except ValueError:
+        data.sort(key=lambda x: x[0], reverse=tab_sort_state.get(col, True))
+
+    for index, (val, child) in enumerate(data):
+        tab_tree.move(child, '', index)
+
+    tab_sort_state[col] = not tab_sort_state.get(col, True)
+
+    for column in tab_tree["columns"]:
+        if column == col:
+            direction = "▲" if tab_sort_state[col] else "▼"
+            tab_tree.heading(column, text=f"{col} {direction}")
         else:
-            return
-
-        bordered_img.paste(img, (0, 0), mask=mask)
-        return ImageTk.PhotoImage(bordered_img)
-
-    def set_limit(self):
-        self.limit = min(40, len(self.sorted_data))
-
-    def exit_without_saving(self):
-        print("exiting without saving")
-
-        try:
-            shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
-        except FileNotFoundError:
-            print("temp_hero_table.json not found")
-            pass
-
-        root.destroy()
-
-    def show_loading_screen(self):
-        self.loading_label = tk.Label(self.root, text="Loading...", font=("Helvetica", 16))
-        self.loading_label.pack(pady=20)
-        self.root.update_idletasks()
-
-    def hide_loading_screen(self):
-        if hasattr(self, 'loading_label'):
-            self.loading_label.destroy()
-            delattr(self, 'loading_label')
-        self.root.update_idletasks()
-
-    def select_replay(self):
-        path = [tk.filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])]
-
-        self.show_loading_screen()
-
-        thread = threading.Thread(target=self.process_sorted_replays(paths=path))
-        thread.start()
-        # self.process_replays_containers(paths=[paths])
-
-    def select_directory(self):
-        file_path = tk.filedialog.askdirectory()
-        paths = []
-
-        for root, dirs, files in os.walk(file_path):
-            for file in files:
-                if file.endswith(".StormReplay"):
-                    paths.append(os.path.join(root, file))
-
-        start = time.time()
-        self.show_loading_screen()
-        thread = threading.Thread(target=self.process_sorted_replays(paths=paths))
-        thread.start()
-
-        print(f"processing time: {time.time() - start}")
-
-    # def process_replays(self, paths: list[str]):
-    #     self.database = database.add_to_container(paths=paths, matches_database=self.database)
-    #     self.refresh_rows()
-    #     self.root.update_idletasks()
-
-    def process_sorted_replays(self, paths: list[str], ):
-        self.sorted_data = (database.add_to_container_and_update_tables(
-            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table))
-        self.refresh_rows()
-        self.root.update_idletasks()
-
-        # utils.update_player_tables()
-
-    def open_help_menu(self):
-        pass
+            tab_tree.heading(column, text=column)
 
 
 if __name__ == "__main__":

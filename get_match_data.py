@@ -55,6 +55,8 @@ def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[s
 
 
 def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = False, sorted_dict=None):
+    print(path)
+
     if sorted_dict is None:
         sorted_dict = {}
     import mpyq

@@ -1201,13 +1201,18 @@ def clean_entity_name(val: str):
     return replacements.get(name, name)
 
 
-def load_partial_json(path, max_entries=50):
+def load_partial_json(path, max_entries=2000, start_position=0):
     sorted_data = SortedDict(lambda x: -x)
+    end_position = start_position
+
     try:
         with open(path, 'r') as f:
+            f.seek(start_position)
             parser = ijson.items(f, '')
             entry_count = 0
+
             for entry in parser:
+                end_position = f.tell()
                 if entry_count >= max_entries:
                     break
                 if isinstance(entry, dict):
@@ -1222,7 +1227,12 @@ def load_partial_json(path, max_entries=50):
     except FileNotFoundError:
         pass
 
-    return sorted_data
+    ret = {
+        'sorted_data': sorted_data,
+        'end_position': end_position
+    }
+
+    return ret
 
 
 def get_as_str(val):
@@ -1290,8 +1300,8 @@ def update_player_tables(match_data):
         file = open("player-data.json")
     except FileNotFoundError:
         print("player-data.json not found. Creating it")
-        with open("player-data.json", "w") as outfile:
-            json.dump(player_data, outfile, indent=4)
+        with open("player-data.json", "w") as f:
+            json.dump(player_data, f, indent=4)
         file = open("player-data.json")
 
     player_data = json.load(file)
@@ -1324,7 +1334,7 @@ def create_empty_hero_table(create_json=False):
         hero['enemyHeroWins'] = [0] * 90
 
     if create_json:
-        with open('hero_table.json', 'w') as outfile:
-            json.dump(hero_table, outfile)
+        with open('hero_table.json', 'w') as f:
+            json.dump(hero_table, f)
 
     return hero_table

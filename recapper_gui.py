@@ -2,6 +2,7 @@ import datetime
 import json
 import threading
 import os
+import shutil
 import time
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -10,11 +11,12 @@ import sv_ttk
 from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
 from tktooltip import ToolTip
+from tkinter import messagebox
 
 import utils
 import database
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 
 class RecapperGui:
@@ -62,6 +64,17 @@ class RecapperGui:
         self.button = None
         self.label = None
 
+        self.tab1_filters = {
+            'mode': 'all',
+            'maps': 'all',
+            'names': ['any'] * 10,
+            'heroes': ['any'] * 10,
+        }
+
+        self.mode_var = None
+        self.map_var = None
+
+        self.tab1_replays = None
         self.tab2_sort_state = {"column": None, "ascending": False}
         self.tab3_sort_state = {"column": None, "ascending": False}
 
@@ -73,32 +86,46 @@ class RecapperGui:
         self.root.title(f"Heroes Recapper {__version__}")
         self.root.geometry("850x700")
 
+        root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         # try:
         #     self.database = database.load_from_pickle("new_pickle.pkl")
         # except FileNotFoundError:
         #     self.database = pd.DataFrame()
 
         try:
-            with open(f"{self.recapper_dir}/gui_output.json", 'r') as f:
-                self.sorted_data = utils.load_partial_json(f"{self.recapper_dir}/gui_output.json")
+            with open(f"{self.recapper_dir}/replay_data.json", 'r') as f:
+                temp = utils.load_partial_json(f"{self.recapper_dir}/replay_data.json")
+                self.sorted_data = temp['sorted_data']
+                self.end_position = temp['end_position']
+
+                print(f"replays: {len(self.sorted_data)}")
         except FileNotFoundError:
             self.sorted_data = SortedDict(lambda x: -x)
+            self.end_position = 0
 
         try:
             with open(f"{self.recapper_dir}/hero_table.json", 'r') as f:
                 self.hero_table = json.load(f)
+                shutil.copy(f"{self.recapper_dir}/hero_table.json", f"{self.recapper_dir}/temp_hero_table.json")
         except FileNotFoundError:
             self.hero_table = utils.create_empty_hero_table()
 
         self.selected_match = None
-
-        # if len(self.sorted_data) > 0:
-        #     _, self.selected_match = self.sorted_data.peekitem()
-
-        self.limit = 0
+        self.limit = None
         self.set_limit()
 
         self.create_widgets()
+
+    def on_closing(self):
+        if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
+
+            dat = dict(self.sorted_data)
+
+            with open(f"{self.recapper_dir}/replay_data.json", "w") as f:
+                json.dump(dat, f)
+            print("Closing Heroes Recapper")
+            root.destroy()
 
     def create_menu(self):
         menu_bar = tk.Menu(self.root)
@@ -109,7 +136,7 @@ class RecapperGui:
         file_menu.add_command(label="Select Replay", command=self.select_replay)
         file_menu.add_command(label="Select Directory", command=self.select_directory)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.exit_app)
+        file_menu.add_command(label="Exit Without Saving", command=self.exit_without_saving)
 
         settings_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Settings", menu=settings_menu)
@@ -145,18 +172,48 @@ class RecapperGui:
         self.create_tab4_content()
 
     def create_tab1_content(self):
-        label = tk.Label(self.tab1, text="Filters")
-        label.pack(pady=20, padx=20)
+        filters_frame = ttk.Frame(self.tab1)
+        filters_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        # Game mode filters
+        modes = ['All', 'Storm League', 'Quick Match', 'Aram']
+        mode_label = ttk.Label(filters_frame, text='Game Mode:')
+        mode_label.grid(row=0, column=4, padx=10, pady=5)
+
+        self.mode_var = tk.StringVar(value='All')
+        mode_combobox = ttk.Combobox(filters_frame, textvariable=self.mode_var, values=modes, state="readonly")
+        mode_combobox.grid(row=0, column=5, padx=10, pady=5)
+
+        # map filters
+        maps = list(utils.map_ids.values())
+        maps.insert(0, 'All')
+
+        map_label = ttk.Label(filters_frame, text='Map:')
+        map_label.grid(row=0, column=8, padx=10, pady=5)
+        self.map_var = tk.StringVar(value='All')
+        map_combobox = ttk.Combobox(filters_frame, textvariable=self.map_var, values=maps, state="readonly")
+        map_combobox.grid(row=0, column=9, padx=10, pady=5)
+
+        # button to open players and heroes filters
+
+        heroes_label = ttk.Label(filters_frame, text='Players and Heroes: ')
+        heroes_label.grid(row=0, column=12)
+        heroes_button = ttk.Button(filters_frame, text='Set', command=self.open_advanced_filters)
+        heroes_button.grid(row=0, column=13, columnspan=2, pady=10)
+
+        # button to apply filters
+        filter_button = ttk.Button(filters_frame, text='Apply Filters', command=self.apply_filters)
+        filter_button.grid(row=2, column=8, columnspan=2, pady=10)
 
         self.tab1_canvas = tk.Canvas(self.tab1, relief=tk.SUNKEN)
         self.tab1_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        scrollbar = tk.Scrollbar(self.tab1, orient=tk.VERTICAL, command=self.tab1_canvas.yview)
+        scrollbar = ttk.Scrollbar(self.tab1, orient=tk.VERTICAL, command=self.tab1_canvas.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab1_canvas.configure(yscrollcommand=scrollbar.set, yscrollincrement=82)
+        self.tab1_canvas.configure(yscrollcommand=scrollbar.set, yscrollincrement=328)
 
-        self.inner_frame = tk.Frame(self.tab1_canvas)
+        self.inner_frame = ttk.Frame(self.tab1_canvas)
         self.inner_frame.bind("<Configure>",
                               lambda e: self.tab1_canvas.configure(scrollregion=self.tab1_canvas.bbox("all")))
 
@@ -164,20 +221,169 @@ class RecapperGui:
 
         self.tab1_canvas.bind("<Configure>", self.on_canvas_configure)
 
-        for i in range(self.limit):
-            self.create_row(i)
+        for i in range(min(self.limit, len(self.sorted_data))):
+            self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
+
+    def apply_filters(self):
+        self.tab1_filters['mode'] = self.mode_var.get()
+        self.tab1_filters['maps'] = self.map_var.get()
+
+        filtered_data = []
+        num_replays = len(self.sorted_data)
+
+        print(f"num_replays: {num_replays}")
+
+        i = 0
+        while len(filtered_data) < self.limit and i != num_replays:
+            match_data = database.get_nth_value(self.sorted_data, i)
+            i += 1
+
+            # filter by game mode
+            if not (self.tab1_filters['mode'] == 'All' or
+                    utils.clean_string(self.tab1_filters['mode']) == utils.clean_string(match_data['gameMode'])):
+                continue
+
+            # filter by map
+
+            if not (self.tab1_filters['maps'] == 'All' or
+                    utils.clean_string(self.tab1_filters['maps']) == utils.clean_string(match_data['map'])):
+                continue
+
+            # filter by player names and heroes
+            player_match = True
+            hero_match = True
+
+            for j in range(10):
+                target_name = self.tab1_filters['names'][j]
+                target_hero = self.tab1_filters['heroes'][j]
+
+                if target_name != 'any' or target_hero != 'any':
+                    name_hero_pair_found = False
+
+                    for k in range(1, 11):
+                        player_key = f"{k}_name"
+                        hero_key = f"{k}_hero"
+
+                        if target_name != 'any' and target_hero != 'any':
+                            # Both player and hero must match
+                            if utils.clean_string(match_data[player_key]) == target_name and utils.clean_string(
+                                    match_data[hero_key]) == target_hero:
+                                name_hero_pair_found = True
+                                break
+                        elif target_name != 'any':
+                            # Only player must match
+                            if utils.clean_string(match_data[player_key]) == target_name:
+                                name_hero_pair_found = True
+                                break
+                        elif target_hero != 'any':
+                            # Only hero must match
+                            if utils.clean_string(match_data[hero_key]) == target_hero:
+                                name_hero_pair_found = True
+                                break
+
+                    if not name_hero_pair_found:
+                        player_match = False
+                        hero_match = False
+                        break
+
+            if player_match and hero_match:
+
+                filtered_data.append(match_data)
+
+            # stop if we reach the end of the sorted_data
+            if i >= len(self.sorted_data):
+                break
+
+        for widget in self.inner_frame.winfo_children():
+            widget.destroy()
+
+        for j in range(min(self.limit, len(filtered_data))):
+            self.create_row(match_data=filtered_data[j])
+
+    def clear_filters(self):
+        self.tab1_filters = {
+            'mode': 'all',
+            'maps': 'all',
+            'players': ['any'] * 10,
+            'heroes': ['any'] * 10,
+        }
+
+    def open_advanced_filters(self):
+        advanced_window = tk.Toplevel(self.tab1)
+        advanced_window.title("Advanced Filters")
+
+        ttk.Label(advanced_window, text="Player").grid(row=0, column=0, padx=10, pady=5)
+        ttk.Label(advanced_window, text="Hero").grid(row=0, column=1, padx=10, pady=5)
+
+        heroes = list(utils.hero_ids.values())
+
+        # Initialize StringVars and store them
+        self.advanced_name_vars = []
+        self.advanced_hero_vars = []
+
+        for i in range(10):
+            # Pre-populate with existing filters
+            current_name = self.tab1_filters['names'][i] if self.tab1_filters['names'][i] != 'any' else ''
+            current_hero = self.tab1_filters['heroes'][i] if self.tab1_filters['heroes'][i] != 'any' else 'Select a Hero'
+
+            # Player Entry
+            name_var = tk.StringVar(value=current_name)
+            name_entry = ttk.Entry(advanced_window, textvariable=name_var)
+            name_entry.grid(row=i + 1, column=0, padx=10, pady=5)
+            self.advanced_name_vars.append(name_var)
+
+            # Hero Combobox
+            hero_var = tk.StringVar(value=current_hero)
+            hero_combobox = ttk.Combobox(advanced_window, textvariable=hero_var, values=heroes, state="readonly")
+            hero_combobox.grid(row=i + 1, column=1, padx=10, pady=5)
+            hero_combobox.configure(height=10)
+            self.advanced_hero_vars.append(hero_var)
+
+        # Save Filters button
+        apply_button = ttk.Button(advanced_window, text='Save Filters', command=lambda: self.save_and_close_advanced_filters(advanced_window))
+        apply_button.grid(row=11, column=0, padx=10, pady=10)
+
+        # Reset Fields button
+        reset_button = ttk.Button(advanced_window, text='Reset Fields', command=self.confirm_reset_fields)
+        reset_button.grid(row=11, column=1, padx=10, pady=10)
+
+    def save_and_close_advanced_filters(self, advanced_window):
+        self.save_advanced_filters()  # Save the filters
+        advanced_window.destroy()     # Close the advanced filter window
+
+    def save_advanced_filters(self):
+        # Update self.tab1_filters with the values from advanced filters
+        for i in range(10):
+            name_value = self.advanced_name_vars[i].get().strip().lower()
+            hero_value = self.advanced_hero_vars[i].get().strip().lower()
+
+            self.tab1_filters['names'][i] = name_value if name_value else 'any'
+            self.tab1_filters['heroes'][i] = hero_value if hero_value and hero_value != 'select a hero' else 'any'
+
+    def confirm_reset_fields(self):
+        answer = tk.messagebox.askyesno("Reset Fields", "Are you sure you want to reset all fields to their default values?")
+        if answer:
+            self.reset_fields()
+
+    def reset_fields(self):
+        # Reset the StringVars to default values
+        for i in range(10):
+            self.advanced_name_vars[i].set('')
+            self.advanced_hero_vars[i].set('Select a Hero')
+
+        self.tab1_filters['names'] = ['any'] * 10
+        self.tab1_filters['heroes'] = ['any'] * 10
 
     def on_canvas_configure(self, event):
         # resizes the subcanvas
         canvas_width = event.width - 10
         self.tab1_canvas.itemconfig(self.inner_frame_id, width=canvas_width)
 
-    def create_row(self, row_number):
+    def create_row(self, match_data):
         row_height = 350
         row_width = 700
-        match_data = database.get_nth_value(self.sorted_data, row_number)
 
-        bg_img_src = f"{self.dist_prefix}images/{utils.clean_string(match_data['map'])}.png"
+        bg_img_src = f"{self.dist_prefix}images/{utils.clean_entity_name(match_data['map'])}.png"
 
         try:
             original_bg_img = Image.open(bg_img_src)
@@ -242,7 +448,7 @@ class RecapperGui:
             widget.destroy()
 
         for i in range(self.limit):
-            self.create_row(i)
+            self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
 
         self.hide_loading_screen()
 
@@ -288,6 +494,11 @@ class RecapperGui:
 
         if self.selected_match is not None:
             self.refresh_tab2_table()
+        else:
+            pass
+            # todo fix this
+            # label = tk.Label(self.tab2, text="Select a match in the Replays tab to view its match details")
+            # label.pack(pady=20, padx=20)
 
     def refresh_tab2_table(self):
 
@@ -484,11 +695,11 @@ class RecapperGui:
 
             row = [
                 hero_name,
-                f"{100 * round(games_won / games_played if games_played != 0 else 0, 4)}",
-                f"±{100 * round(utils.wald_interval(x=games_won, n=games_played), 4)} ",
-                f"{100 * round(pick_rate + ban_rate, 4)}",
-                f"{100 * round(pick_rate, 4)}",
-                f"{100 * round(ban_rate, 4)}",
+                f"{round(100 * (games_won / games_played) if games_played != 0 else 0, 3)}",
+                f"±{round(100 * utils.wald_interval(x=games_won, n=games_played), 3)} ",
+                f"{round(100 * (pick_rate + ban_rate), 3)}",
+                f"{round(100 * pick_rate, 3)}",
+                f"{round(100 * ban_rate, 3)}",
                 "influence",  # need to calculate later
                 games_played
             ]
@@ -542,17 +753,17 @@ class RecapperGui:
         return ImageTk.PhotoImage(bordered_img)
 
     def set_limit(self):
-        self.limit = min(20, len(self.sorted_data))
+        self.limit = min(40, len(self.sorted_data))
 
-    def exit_app(self):
-        # database.save_to_pickle("new_pickle.pkl", self.database)
+    def exit_without_saving(self):
+        print("exiting without saving")
 
-        print("exiting")
+        try:
+            shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
+        except FileNotFoundError:
+            print("temp_hero_table.json not found")
+            pass
 
-        dat = dict(self.sorted_data)
-
-        with open(f"{self.recapper_dir}/gui_output.json", "w") as outfile:
-            json.dump(dat, outfile)
         root.destroy()
 
     def show_loading_screen(self):
@@ -597,7 +808,6 @@ class RecapperGui:
     #     self.root.update_idletasks()
 
     def process_sorted_replays(self, paths: list[str], ):
-        # self.sorted_data = database.add_to_container(paths=paths, sorted_dict=self.sorted_data)
         self.sorted_data = (database.add_to_container_and_update_tables(
             paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table))
         self.refresh_rows()

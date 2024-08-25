@@ -2,8 +2,6 @@
 
 Heroes Recapper is an offline replay tracker that has various features. This app currently is only compatible with windows.
 
-Current version is 0.1.1
-
 # Installation
 
 To build this app, download the repository, open terminal, navigate to the project's root directory, and paste and run the following line into terminal
@@ -24,9 +22,9 @@ Alternatively, just download the most recent release here: https://github.com/Or
 
 # Known issues
 
-In order for the app to save processed replays, you must exit the app using File -> Exit. Do not just close the app.
-
 Certain player names might not show up on "Match Details".
+
+Incomplete matches (such as those done in sandbox mode) will cause an error in the parser.
 
 For installation, installing heroprotocol via pip only gets you up to version protocol91756.py.
 

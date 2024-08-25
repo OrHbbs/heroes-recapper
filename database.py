@@ -208,7 +208,6 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
             min_level = int(min(match_data['levelRed'], match_data['levelBlue']))
 
             for i in range(1, 1 + len(match_heroes)):
-                print(match_data[f"{i}_hero"])
                 match_heroes[i - 1] = utils.get_id_by_hero(match_data[f"{i}_hero"])
 
                 ht = hero_table[match_heroes[i - 1] - 1]
@@ -317,12 +316,11 @@ def update_tables(replay_data):
     return
 
 
-# maybe this is inefficient
 def get_nth_value(sorted_dict: SortedDict, i: int):
     if i < 0 or i >= len(sorted_dict):
         raise IndexError("Index out of range")
-    keys = list(sorted_dict.keys())
-    key = keys[i]
+
+    key = sorted_dict.iloc[i]
     return sorted_dict[key]
 
 

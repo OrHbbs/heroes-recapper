@@ -1,4 +1,5 @@
 import json
+import pprint
 
 from sortedcontainers import SortedDict
 # import pandas as pd
@@ -178,7 +179,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 "levelRed": data["players"][0]["Level"],
                 "levelBlue": data["players"][-1]["Level"],
                 "bansBlue": data["bansBlue"],
-                "bansRed": data["bansRed"]
+                "bansRed": data["bansRed"],
             }
 
             for each_player in data['players']:
@@ -190,11 +191,15 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 for key, value in player_data.items():
                     player_data_combined[f"{i + 1}_{key}"] = value
 
+                player_data_combined[f"{i + 1}_Talents"] = ""
+
+                for j in range(1, 8):
+                    player_data_combined[f"{i + 1}_Talents"] += (player_data[f"Tier{j}Talent"])
+                    del player_data_combined[f"{i + 1}_Tier{j}Talent"]
+
             match_data.update(player_data_combined)
 
             sorted_dict[match_data["rawDate"]] = match_data
-
-            # print(match_data)
 
             # _______________________
             # updating hero_table
@@ -221,13 +226,13 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 ht['totalExperience'] += int(match_data[f"{i}_ExperienceContribution"])
                 ht['totalSiege'] += int(match_data[f"{i}_SiegeDamage"])
 
-                for j in range(1, 1 + len(ht['talentGames'])):
-                    selected_talent = int(match_data[f"{i}_Tier{j}Talent"]) - 1
+                for j in range(len(ht['talentGames'])):
+                    selected_talent = int(match_data[f"{i}_Talents"][j]) - 1
                     if selected_talent == -1:
                         break
-                    ht['talentGames'][j - 1][selected_talent] += 1
-                    if min_level >= int(utils.talent_tiers[j - 1]):
-                        ht['talentNormalizedGames'][j - 1][selected_talent] += 1
+                    ht['talentGames'][j][selected_talent] += 1
+                    if min_level >= int(utils.talent_tiers[j]):
+                        ht['talentNormalizedGames'][j][selected_talent] += 1
 
             # updating ally and enemy hero games
 
@@ -261,18 +266,18 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 ht = hero_table[match_heroes[i - 1] - 1]
                 ht['gamesWon'] += 1
 
-                for j in range(1, 1 + len(ht['talentGames'])):
-                    selected_talent = int(match_data[f"{i}_Tier{j}Talent"]) - 1
+                for j in range(len(ht['talentGames'])):
+                    selected_talent = int(match_data[f"{i}_Talents"][j]) - 1
 
                     if selected_talent == -1:
                         break
 
-                    ht['talentWins'][j - 1][selected_talent] += 1
+                    ht['talentWins'][j][selected_talent] += 1
 
                     # normalized talent wins
 
                     if min_level >= int(utils.talent_tiers[j - 1]):
-                        ht['talentNormalizedWins'][j - 1][selected_talent] += 1
+                        ht['talentNormalizedWins'][j][selected_talent] += 1
 
             # updating hero bans
 

@@ -171,9 +171,6 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
                     b_line += 1
 
-        print(output['bansBlue'])
-        print(output['bansRed'])
-
         game_stats = get_player_data(events_data, len(player_list))
 
         # todo game time is different on heroesprofile and stats of the storm, which one is correct?

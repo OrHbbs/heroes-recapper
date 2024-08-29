@@ -8,6 +8,8 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.filedialog
 import sv_ttk
+import pprint
+from custom_hovertip import CustomTooltipLabel
 from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
 from tktooltip import ToolTip
@@ -16,7 +18,7 @@ from tkinter import messagebox
 import utils
 import database
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 
 class RecapperGui:
@@ -156,7 +158,7 @@ class RecapperGui:
         root.destroy()
 
     def show_loading_screen(self):
-        self.loading_label = tk.Label(self.root, text="Loading...", font=("Helvetica", 16))
+        self.loading_label = tk.Label(self.root, text="Loading...", font=("Segoe UI", 16))
         self.loading_label.pack(pady=20)
         self.root.update_idletasks()
 
@@ -507,7 +509,7 @@ class TabReplays:
         if RecapperGui.selected_match != match:
             RecapperGui.selected_match = match
 
-        self.tabs.select(1) # setting selected tab to "Match Details"
+        self.tabs.select(1)  # setting selected tab to "Match Details"
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = utils.clean_entity_name(match_data[f"{index + 1}_hero"])
@@ -542,27 +544,33 @@ class TabReplays:
 class TabMatchDetails:
     def __init__(self, parent):
         self.hero_images = None
-        self.tab2_tree = None
-        self.match_details_sort_state = {"column": None, "ascending": False}
-        self.match_details_subframe = None
+        self.score_subframe = None
+        self.score_sort_state = {"column": None, "ascending": False}
+        self.score_tree = None
         self.match_details_canvas = None
+        self.toggle_talent_button = None
         self.frame = tk.Frame(parent)
+
+        self.match_details_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
+        self.match_details_canvas.pack(fill=tk.BOTH, expand=True)
+
         self.create_widgets()
 
     def create_widgets(self):
 
-        self.match_details_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
-        self.match_details_canvas.pack(fill=tk.BOTH)
-
         if RecapperGui.selected_match is not None:
-            self.refresh_table()
+            self.create_score_table()
+
+            self.toggle_talent_button = ttk.Button(self.match_details_canvas, text="Show Talents",
+                                                   command=self.open_talent_viewer)
+            self.toggle_talent_button.pack(pady=10)  # Adjust position as needed
         else:
             pass
             # todo fix this
             # label = tk.Label(self.tab2, text="Select a match in the Replays tab to view its match details")
             # label.pack(pady=20, padx=20)
 
-    def refresh_table(self):
+    def create_score_table(self):
 
         match_data = RecapperGui.selected_match
 
@@ -580,29 +588,29 @@ class TabMatchDetails:
                    "Damage Taken", "XP Contribution"]
         column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
-        self.match_details_subframe = tk.Frame(self.match_details_canvas)
-        self.match_details_subframe.pack(fill=tk.BOTH, expand=True)
+        self.score_subframe = tk.Frame(self.match_details_canvas)
+        self.score_subframe.pack(fill=tk.BOTH, expand=True)
 
-        self.tab2_tree = ttk.Treeview(self.match_details_subframe, columns=columns, show="tree headings")
-        self.tab2_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.score_tree = ttk.Treeview(self.score_subframe, columns=columns, show="tree headings")
+        self.score_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         for col, width in zip(columns, column_widths):
-            self.tab2_tree.heading(col, text=col,
-                                   command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.tab2_tree,
-                                                                           tab_sort_state=self.match_details_sort_state))
-            self.tab2_tree.column(col, anchor="center", width=width, )
+            self.score_tree.heading(col, text=col,
+                                    command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.score_tree,
+                                                                            tab_sort_state=self.score_sort_state))
+            self.score_tree.column(col, anchor="center", width=width, )
 
-        scrollbar = ttk.Scrollbar(self.match_details_subframe, orient=tk.VERTICAL, command=self.tab2_tree.yview)
-        self.tab2_tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # scrollbar = ttk.Scrollbar(self.score_subframe, orient=tk.VERTICAL, command=self.score_tree.yview)
+        # self.score_tree.configure(yscrollcommand=scrollbar.set)
+        # scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        for row in self.tab2_tree.get_children():
-            self.tab2_tree.delete(row)
+        for row in self.score_tree.get_children():
+            self.score_tree.delete(row)
 
         self.hero_images = {}
 
-        self.tab2_tree.tag_configure('blue_row', background='#08075e')
-        self.tab2_tree.tag_configure('red_row', background='#731009')
+        self.score_tree.tag_configure('blue_row', background='#08075e')
+        self.score_tree.tag_configure('red_row', background='#731009')
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
@@ -627,22 +635,102 @@ class TabMatchDetails:
             self.hero_images[hero_name] = img
 
             if i <= 5:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
-                                      tags=('blue_row',))
+                self.score_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
+                                       tags=('blue_row',))
             else:
-                self.tab2_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
-                                      tags=('red_row',))
+                self.score_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
+                                       tags=('red_row',))
 
-            self.tab2_tree.heading('#0', text='Icon', anchor='center')
-            self.tab2_tree.column('#0', width=20)
+            self.score_tree.heading('#0', text='Icon', anchor='center')
+            self.score_tree.column('#0', width=20)
 
         self.match_details_canvas.update_idletasks()
+
+    def open_talent_viewer(self):
+        talent_window = tk.Toplevel(self.frame)
+        talent_window.title("Talent Viewer")
+
+        talent_window.geometry("1425x425")  # Adjust size as necessary
+
+        talent_canvas = tk.Canvas(talent_window, relief=tk.SUNKEN)
+        talent_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # Create a subframe inside the canvas to hold the content
+        talent_subframe = ttk.Frame(talent_canvas)
+        talent_canvas.create_window((0, 0), window=talent_subframe, anchor="nw")
+
+        match_data = RecapperGui.selected_match
+
+        icon_size = 50  # Hero icon size
+        talent_spacing = 25  # Spacing between talents
+
+        for i in range(1, 11):  # assuming 10 players
+            prefix = f"{i}_"
+            hero_name = utils.clean_entity_name(match_data.get(f"{prefix}hero"))
+            player_name = match_data.get(f"{prefix}battletag")
+
+            # determining position based on team (left or right column)
+            column = 0 if i <= 5 else 11
+            row = (i - 1) % 5
+
+            frame_color = "#08075e" if i <= 5 else "#731009"
+            player_frame = tk.Frame(talent_subframe, bg=frame_color)
+            player_frame.grid(row=row, column=column, columnspan=7, padx=5, pady=5, sticky="ew")
+
+            hero_image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
+            hero_img = draw_image(hero_image_path, border_width=0, size=icon_size)
+            hero_label = tk.Label(player_frame, image=hero_img, bg=frame_color)
+            hero_label.image = hero_img  # Keep a reference to avoid garbage collection
+            hero_label.grid(row=0, column=0, padx=(20, 10), pady=10, sticky="w")
+
+            name_label = tk.Label(player_frame, text=player_name, width=20, anchor="w", bg=frame_color, fg="white")
+            name_label.grid(row=0, column=1, padx=(0, 20), pady=10, sticky="w")
+
+            with open(f'{RecapperGui.dist_prefix}heroes-talents/hero/{hero_name}.json', 'r') as f:
+                hero_talents = json.load(f)
+
+            for level_index, talent_tier in enumerate(['1', '4', '7', '10', '13', '16', '20']):
+                talent_choice = int(match_data.get(f"{prefix}Talents")[level_index])
+
+                if talent_choice != 0:
+                    talent_data = hero_talents["talents"][talent_tier][talent_choice - 1]
+                    talent_button = self.create_talent_icon(player_frame, talent_data)
+                    talent_button.grid(row=0, column=2 + level_index, padx=(0, 10), pady=10)
+                else:
+                    placeholder_label = tk.Label(player_frame, bg=frame_color, width=7)
+                    placeholder_label.grid(row=0, column=2 + level_index, padx=(0, 10), pady=10)
+
+    def create_talent_icon(self, parent, talent_data):
+        image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/talents/{talent_data['icon']}"
+
+        img = draw_image(image_path=image_path, shape="circle", size=50)
+
+        talent_button = tk.Button(parent, image=img, borderwidth='1', relief='solid')
+        talent_button.image = img
+
+        # ToolTip(talent_button, msg=f"{talent_data['name']}\n"
+        #                            f"{talent_data['type']}\n"
+        #                            f"{talent_data['description']}", delay=0.5)
+
+        CustomTooltipLabel(talent_button,
+                           text=f"{talent_data['name']}\n{talent_data['type']}\n{talent_data['description']}",
+                           hover_delay=500,
+                           justify="center",
+                           wraplength=300,
+                           background="#1c1c1c",
+                           foreground="white",
+                           border=1,
+                           relief='groove')
+
+        return talent_button
 
     def refresh_tables(self):
         for widget in self.match_details_canvas.winfo_children():
             widget.destroy()
-        self.match_details_canvas.configure(scrollregion=(0, 0, 0, 0))
-        self.refresh_table()
+
+        self.create_widgets()
+
+        self.frame.update_idletasks()
 
 
 class TabHeroStats:
@@ -654,7 +742,8 @@ class TabHeroStats:
         try:
             with open(f"{RecapperGui.recapper_dir}/hero_table.json", 'r') as f:
                 self.hero_table = json.load(f)
-                shutil.copy(f"{RecapperGui.recapper_dir}/hero_table.json", f"{RecapperGui.recapper_dir}/temp_hero_table.json")
+                shutil.copy(f"{RecapperGui.recapper_dir}/hero_table.json",
+                            f"{RecapperGui.recapper_dir}/temp_hero_table.json")
         except FileNotFoundError:
             self.hero_table = utils.create_empty_hero_table()
 
@@ -726,7 +815,8 @@ class TabHeroStats:
         scrollbar = tk.Scrollbar(self.hero_stats_subframe, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none', show="tree headings",
+        self.tab3_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none',
+                                      show="tree headings",
                                       yscrollcommand=scrollbar.set, height=50)
         self.tab3_tree.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.tab3_tree.yview)

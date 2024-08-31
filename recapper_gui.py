@@ -8,17 +8,21 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.filedialog
 import sv_ttk
-import pprint
+
 from custom_hovertip import CustomTooltipLabel
 from PIL import Image, ImageDraw, ImageTk, ImageEnhance
 from sortedcontainers import SortedDict
-from tktooltip import ToolTip
 from tkinter import messagebox
+
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 import utils
 import database
 
-__version__ = "0.3.0"
+import pprint
+
+__version__ = "0.4.0"
 
 
 class RecapperGui:
@@ -50,6 +54,8 @@ class RecapperGui:
         self.scrollbar = None
         self.button = None
         self.label = None
+
+        self.observer = None  # used for watchdog process
 
         self.tab1_filters = {
             'mode': 'all',
@@ -171,14 +177,17 @@ class RecapperGui:
     def select_replay(self):
         path = [tk.filedialog.askopenfilename(filetypes=[("Storm Replay Files", "*.StormReplay")])]
 
-        thread = threading.Thread(target=self.process_sorted_replays(paths=path))
-        thread.start()
-        # self.process_replays_containers(paths=[paths])
+        self.process_sorted_replays(paths=path)
 
     def select_directory(self):
         file_path = tk.filedialog.askdirectory()
-        paths = []
 
+        # stops observing if user selects a new directory
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
+
+        paths = []
         for root, dirs, files in os.walk(file_path):
             for file in files:
                 if file.endswith(".StormReplay"):
@@ -186,34 +195,52 @@ class RecapperGui:
 
         start = time.time()
         self.show_loading_screen()
-        thread = threading.Thread(target=self.process_sorted_replays(paths=paths))
+        thread = threading.Thread(target=self.process_sorted_replays, args=(paths,))
         thread.start()
 
         print(f"processing time: {time.time() - start}")
         self.hide_loading_screen()
 
-    # def process_replays(self, paths: list[str]):
-    #     self.database = database.add_to_container(paths=paths, matches_database=self.database)
-    #     self.refresh_rows()
-    #     self.root.update_idletasks()
+        self.start_watching_directory(file_path)
 
     def process_sorted_replays(self, paths: list[str], ):
-        self.sorted_data = (database.add_to_container_and_update_tables(
-            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table))
+        database.add_to_container_and_update_tables(
+            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table)
         self.tab_replays.refresh_rows()
         self.root.update_idletasks()
 
         # utils.update_player_tables()
 
+    def start_watching_directory(self, directory):
+        event_handler = ReplayHandler(self.process_sorted_replays)
+        self.observer = Observer()
+        self.observer.schedule(event_handler, path=directory, recursive=False)
+        self.observer.start()
+
+    def stop_watching_directory(self):
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
+
     def open_help_menu(self):
         pass
+
+
+class ReplayHandler(FileSystemEventHandler):
+    def __init__(self, process_replay_callback):
+        super().__init__()
+        self.process_replay_callback = process_replay_callback
+
+    def on_created(self, event):
+        if event.src_path.endswith(".StormReplay"):
+            self.process_replay_callback([event.src_path])
 
 
 class TabReplays:
     def __init__(self, parent, sorted_data, tabs):
         self.replays_canvas = None
         self.frame = tk.Frame(parent)
-        self.limit = 20
+        self.limit = 10
         self.sorted_data = sorted_data
         self.tabs = tabs
 
@@ -251,14 +278,24 @@ class TabReplays:
 
         # button to open players and heroes filters
 
-        heroes_label = ttk.Label(filters_frame, text='Players and Heroes: ')
-        heroes_label.grid(row=0, column=12)
+        heroes_label = ttk.Label(filters_frame, text='Players & Heroes: ')
+        heroes_label.grid(row=0, column=10)
         heroes_button = ttk.Button(filters_frame, text='Set', command=self.open_advanced_filters)
-        heroes_button.grid(row=0, column=13, columnspan=2, pady=10)
+        heroes_button.grid(row=0, column=11, columnspan=2, pady=10)
+
+        num_replays_label = ttk.Label(filters_frame, text=f"Processed Replays: {len(self.sorted_data)}")
+        num_replays_label.grid(row=2, column=5)
 
         # button to apply filters
-        filter_button = ttk.Button(filters_frame, text='Apply Filters', command=self.apply_filters)
+        filter_button = ttk.Button(filters_frame, text='Apply Filters', command=self.apply_filters, cursor='hand2')
         filter_button.grid(row=2, column=8, columnspan=2, pady=10)
+
+        # button for limit per page
+        limit_label = ttk.Label(filters_frame, text='Limit: ')
+        limit_label.grid(row=2, column=10)
+        self.limit_var = tk.IntVar(value=self.limit)
+        limit_combobox = ttk.Combobox(filters_frame, textvariable=self.limit_var, values=[5, 10, 25, 50], state="readonly", width=3)
+        limit_combobox.grid(row=2, column=11, pady=10)
 
         self.replays_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
         self.replays_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -279,17 +316,18 @@ class TabReplays:
         for i in range(min(self.limit, len(self.sorted_data))):
             self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
 
-    def set_limit(self):
-        self.limit = min(40, len(self.sorted_data))
-
     def apply_filters(self):
         self.replay_filters['mode'] = self.mode_var.get()
         self.replay_filters['maps'] = self.map_var.get()
+        self.limit = self.limit_var.get()
 
         filtered_data = []
         num_replays = len(self.sorted_data)
 
         print(f"num_replays: {num_replays}")
+
+        if hasattr(self, 'original_bg_images'):
+            self.original_bg_images.clear()
 
         i = 0
         while len(filtered_data) < self.limit and i != num_replays:
@@ -377,7 +415,6 @@ class TabReplays:
         self.advanced_hero_vars = []
 
         for i in range(10):
-            # Pre-populate with existing filters
             current_name = self.replay_filters['names'][i] if self.replay_filters['names'][i] != 'any' else ''
             current_hero = self.replay_filters['heroes'][i] if self.replay_filters['heroes'][
                                                                    i] != 'any' else 'Select a Hero'
@@ -421,7 +458,7 @@ class TabReplays:
             self.reset_fields()
 
     def reset_fields(self):
-        # Reset the StringVars to default values
+        # reset to default
         for i in range(10):
             self.advanced_name_vars[i].set('')
             self.advanced_hero_vars[i].set('Select a Hero')
@@ -455,9 +492,8 @@ class TabReplays:
         sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", height=row_height)
         sub_frame.pack(pady=10, fill=tk.X, expand=True)
 
-        sub_canvas = tk.Canvas(sub_frame, height=300)
+        sub_canvas = tk.Canvas(sub_frame, height=300, cursor="hand2")
         sub_canvas.pack(fill=tk.BOTH, expand=True)
-
         if bg_img:
             self.bg_img_id = sub_canvas.create_image(0, 0, anchor="nw", image=bg_img)
             sub_canvas.image = bg_img
@@ -497,7 +533,9 @@ class TabReplays:
         sub_canvas.bind("<Button-1>", lambda e, match=match_data: self.set_selected_match(match))
 
     def refresh_rows(self):
-        self.set_limit()
+
+        if hasattr(self, 'original_bg_images'):
+            self.original_bg_images.clear()
 
         for widget in self.inner_frame.winfo_children():
             widget.destroy()
@@ -521,7 +559,15 @@ class TabReplays:
         image_button = tk.Button(canvas, highlightcolor=border_color, image=img,
                                  command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
         image_button.image = img
-        ToolTip(image_button, msg=match_data[f"{index + 1}_name"], delay=0.5)
+
+        CustomTooltipLabel(image_button,
+                           text=match_data[f"{index + 1}_name"],
+                           hover_delay=300,
+                           justify="center",
+                           background="#1c1c1c",
+                           foreground="white",
+                           border=1,
+                           relief='groove')
 
         if index < 5:
             canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
@@ -546,9 +592,14 @@ class TabMatchDetails:
         self.hero_images = None
         self.score_subframe = None
         self.score_sort_state = {"column": None, "ascending": False}
+        self.extras_sort_state = {"column": None, "ascending": False}
         self.score_tree = None
         self.match_details_canvas = None
         self.toggle_talent_button = None
+        self.toggle_extras_button = None
+        self.talent_viewer_is_open = False
+        self.extras_viewer_is_open = False
+
         self.frame = tk.Frame(parent)
 
         self.match_details_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
@@ -562,13 +613,16 @@ class TabMatchDetails:
             self.create_score_table()
 
             self.toggle_talent_button = ttk.Button(self.match_details_canvas, text="Show Talents",
-                                                   command=self.open_talent_viewer)
-            self.toggle_talent_button.pack(pady=10)  # Adjust position as needed
+                                                   command=self.open_talent_viewer, cursor='hand2')
+            self.toggle_talent_button.pack(pady=5)
+
+            self.toggle_extras_button = ttk.Button(self.match_details_canvas, text="Show Advanced Stats",
+                                                   command=self.open_extras_viewer, cursor='hand2')
+            self.toggle_extras_button.pack(pady=5)
         else:
-            pass
-            # todo fix this
-            # label = tk.Label(self.tab2, text="Select a match in the Replays tab to view its match details")
-            # label.pack(pady=20, padx=20)
+
+            label = tk.Label(self.match_details_canvas, text="Select a match in the Replays tab to view match details")
+            label.pack(pady=20, padx=20)
 
     def create_score_table(self):
 
@@ -584,9 +638,9 @@ class TabMatchDetails:
                          )
         label.pack(pady=20, padx=20)
 
-        columns = ["Number", "Player", "Hero", "Kills", "Assists", "Deaths", "Hero Damage", "Siege Damage", "Healing",
-                   "Damage Taken", "XP Contribution"]
-        column_widths = [5, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
+        columns = ["Number", "Player", "Hero", "Kills", "Assists", "Deaths", "Hero Dmg", "Siege Dmg", "Healing",
+                   "Dmg Taken", "XP"]
+        column_widths = [10, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
         self.score_subframe = tk.Frame(self.match_details_canvas)
         self.score_subframe.pack(fill=tk.BOTH, expand=True)
@@ -599,13 +653,6 @@ class TabMatchDetails:
                                     command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.score_tree,
                                                                             tab_sort_state=self.score_sort_state))
             self.score_tree.column(col, anchor="center", width=width, )
-
-        # scrollbar = ttk.Scrollbar(self.score_subframe, orient=tk.VERTICAL, command=self.score_tree.yview)
-        # self.score_tree.configure(yscrollcommand=scrollbar.set)
-        # scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        for row in self.score_tree.get_children():
-            self.score_tree.delete(row)
 
         self.hero_images = {}
 
@@ -647,24 +694,28 @@ class TabMatchDetails:
         self.match_details_canvas.update_idletasks()
 
     def open_talent_viewer(self):
-        talent_window = tk.Toplevel(self.frame)
-        talent_window.title("Talent Viewer")
+        if self.talent_viewer_is_open:
+            root.bell()
+            return
+        self.talent_viewer_is_open = True
 
-        talent_window.geometry("1425x425")  # Adjust size as necessary
+        talent_window = tk.Toplevel(self.frame)
+        talent_window.title("Talents")
+
+        talent_window.geometry("1425x425")
 
         talent_canvas = tk.Canvas(talent_window, relief=tk.SUNKEN)
         talent_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Create a subframe inside the canvas to hold the content
         talent_subframe = ttk.Frame(talent_canvas)
         talent_canvas.create_window((0, 0), window=talent_subframe, anchor="nw")
 
         match_data = RecapperGui.selected_match
 
-        icon_size = 50  # Hero icon size
-        talent_spacing = 25  # Spacing between talents
+        icon_size = 50
+        talent_spacing = 25
 
-        for i in range(1, 11):  # assuming 10 players
+        for i in range(1, 11):
             prefix = f"{i}_"
             hero_name = utils.clean_entity_name(match_data.get(f"{prefix}hero"))
             player_name = match_data.get(f"{prefix}battletag")
@@ -680,7 +731,7 @@ class TabMatchDetails:
             hero_image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
             hero_img = draw_image(hero_image_path, border_width=0, size=icon_size)
             hero_label = tk.Label(player_frame, image=hero_img, bg=frame_color)
-            hero_label.image = hero_img  # Keep a reference to avoid garbage collection
+            hero_label.image = hero_img
             hero_label.grid(row=0, column=0, padx=(20, 10), pady=10, sticky="w")
 
             name_label = tk.Label(player_frame, text=player_name, width=20, anchor="w", bg=frame_color, fg="white")
@@ -700,6 +751,12 @@ class TabMatchDetails:
                     placeholder_label = tk.Label(player_frame, bg=frame_color, width=7)
                     placeholder_label.grid(row=0, column=2 + level_index, padx=(0, 10), pady=10)
 
+        talent_window.protocol("WM_DELETE_WINDOW", lambda: self.close_talent_viewer(talent_window))
+
+    def close_talent_viewer(self, window):
+        self.talent_viewer_is_open = False
+        window.destroy()
+
     def create_talent_icon(self, parent, talent_data):
         image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/talents/{talent_data['icon']}"
 
@@ -708,13 +765,9 @@ class TabMatchDetails:
         talent_button = tk.Button(parent, image=img, borderwidth='1', relief='solid')
         talent_button.image = img
 
-        # ToolTip(talent_button, msg=f"{talent_data['name']}\n"
-        #                            f"{talent_data['type']}\n"
-        #                            f"{talent_data['description']}", delay=0.5)
-
         CustomTooltipLabel(talent_button,
                            text=f"{talent_data['name']}\n{talent_data['type']}\n{talent_data['description']}",
-                           hover_delay=500,
+                           hover_delay=300,
                            justify="center",
                            wraplength=300,
                            background="#1c1c1c",
@@ -723,6 +776,92 @@ class TabMatchDetails:
                            relief='groove')
 
         return talent_button
+
+    def open_extras_viewer(self):
+        if self.extras_viewer_is_open:
+            root.bell()
+            return
+        self.extras_viewer_is_open = True
+
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=40, padding=(0,2), anchor="center")
+
+        extras_window = tk.Toplevel(self.frame)
+        extras_window.title("Advanced Stats")
+
+        extras_window.geometry("1450x500")
+
+        tree_frame = tk.Frame(extras_window)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        h_scroll = tk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+
+        columns = ["Number", "Player", "Physical\nDmg", "Spell Dmg", "Self\nHealing", "Ally\nShielding", "Camp\nCaptures", "Time\nDead",
+                   "Teamfight\nHealing", "Teamfight\nDamage", "Teamfight\nDmg Taken", "Clutch\nHeals", "Escapes",
+                   "Enemy\nCC Time", "Enemy\nSilence\n Time", "Enemy\nRoot\nTime", "Enemy\nStun\nTime", "Regen\nGlobes", "Time\non Fire", "Minion\nKills"]
+        column_widths = [40, 120, 80, 80, 80, 80, 40, 40, 80, 80, 80, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40]
+
+        extras_tree = ttk.Treeview(tree_frame,
+                                   columns=columns,
+                                   show="tree headings",
+                                   height=50,
+                                   xscrollcommand=h_scroll.set,)
+
+        h_scroll.config(command=extras_tree.xview)
+
+        extras_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        for col, width in zip(columns, column_widths):
+            extras_tree.heading(col, text=col, anchor="center",
+                                command=lambda _col=col: sort_by_column(col=_col,
+                                                                        tab_tree=extras_tree,
+                                                                        tab_sort_state=self.extras_sort_state))
+            extras_tree.column(col, anchor="center", width=width)
+
+        match_data = RecapperGui.selected_match
+
+        for i in range(1, 11):
+            prefix = f"{i}_"
+            hero_name = utils.clean_entity_name(match_data.get(f"{prefix}hero"))
+            row = [
+                i,
+                match_data.get(f"{prefix}battletag"),
+                match_data.get(f"{prefix}PhysicalDamage", ""),
+                match_data.get(f"{prefix}SpellDamage", ""),
+                match_data.get(f"{prefix}SelfHealing", ""),
+                match_data.get(f"{prefix}ProtectionGivenToAllies", ""),
+                match_data.get(f"{prefix}MercCampCaptures", ""),
+                match_data.get(f"{prefix}TimeSpentDead", ""),
+                match_data.get(f"{prefix}TeamfightHealingDone", ""),
+                match_data.get(f"{prefix}TeamfightHeroDamage", ""),
+                match_data.get(f"{prefix}TeamfightDamageTaken", ""),
+                match_data.get(f"{prefix}ClutchHealsPerformed", ""),
+                match_data.get(f"{prefix}EscapesPerformed", ""),
+                match_data.get(f"{prefix}TimeCCdEnemyHeroes", ""),
+                match_data.get(f"{prefix}TimeSilencingEnemyHeroes", ""),
+                match_data.get(f"{prefix}TimeRootingEnemyHeroes", ""),
+                match_data.get(f"{prefix}TimeStunningEnemyHeroes", ""),
+                match_data.get(f"{prefix}OnFireTimeOnFire", ""),
+                match_data.get(f"{prefix}RegenGlobes", ""),
+                match_data.get(f"{prefix}MinionKills", ""),
+            ]
+
+            if i <= 5:
+                extras_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
+                                   tags=('blue_row',))
+            else:
+                extras_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name],
+                                   tags=('red_row',))
+
+        extras_tree.heading('#0', text='\nIcon\n', anchor='center')
+        extras_tree.column('#0', width=80, anchor='center')
+
+        extras_window.protocol("WM_DELETE_WINDOW", lambda: self.close_extras_viewer(extras_window))
+
+    def close_extras_viewer(self, window):
+        self.extras_viewer_is_open = False
+        window.destroy()
 
     def refresh_tables(self):
         for widget in self.match_details_canvas.winfo_children():

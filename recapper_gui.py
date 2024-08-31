@@ -43,10 +43,16 @@ class RecapperGui:
         self.bg_img = None
         self.tree = None
 
-        self.tab_replays = None
-        self.tab_match_details = None
-        self.tab_hero_stats = None
-        self.tab_player_stats = None
+        try:
+            with open(f"{self.recapper_dir}/replay_data.json", 'r') as f:
+                temp = utils.load_partial_json(f"{self.recapper_dir}/replay_data.json")
+                self.sorted_data = temp['sorted_data']
+                self.end_position = temp['end_position']
+
+                print(f"replays: {len(self.sorted_data)}")
+        except FileNotFoundError:
+            self.sorted_data = SortedDict(lambda x: -x)
+            self.end_position = 0
 
         self.inner_frame = None
         self.inner_frame_id = None
@@ -56,6 +62,11 @@ class RecapperGui:
         self.label = None
 
         self.observer = None  # used for watchdog process
+
+        self.tab_replays = None
+        self.tab_match_details = None
+        self.tab_hero_stats = None
+        self.tab_player_stats = None
 
         self.tab1_filters = {
             'mode': 'all',
@@ -76,17 +87,6 @@ class RecapperGui:
         self.root.geometry("850x700")
 
         root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        try:
-            with open(f"{self.recapper_dir}/replay_data.json", 'r') as f:
-                temp = utils.load_partial_json(f"{self.recapper_dir}/replay_data.json")
-                self.sorted_data = temp['sorted_data']
-                self.end_position = temp['end_position']
-
-                print(f"replays: {len(self.sorted_data)}")
-        except FileNotFoundError:
-            self.sorted_data = SortedDict(lambda x: -x)
-            self.end_position = 0
 
         self.selected_match = None
 
@@ -182,6 +182,10 @@ class RecapperGui:
     def select_directory(self):
         file_path = tk.filedialog.askdirectory()
 
+        if not file_path:
+            print("invalid file path")
+            return
+
         # stops observing if user selects a new directory
         if self.observer:
             self.observer.stop()
@@ -206,6 +210,7 @@ class RecapperGui:
     def process_sorted_replays(self, paths: list[str], ):
         database.add_to_container_and_update_tables(
             paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table)
+        self.tab_replays.update_replay_count()
         self.tab_replays.refresh_rows()
         self.root.update_idletasks()
 
@@ -246,6 +251,11 @@ class TabReplays:
         self.hero_icon_cache = {}
         self.bg_image_cache = {}
 
+        self.replay_count = len(sorted_data)
+
+        self.replay_count_var = tk.StringVar()
+        self.replay_count_var.set(f"Processed Replays: {len(self.sorted_data)}")
+
         self.replay_filters = {
             'mode': 'all',
             'maps': 'all',
@@ -285,7 +295,7 @@ class TabReplays:
         heroes_button = ttk.Button(filters_frame, text='Set', command=self.open_advanced_filters)
         heroes_button.grid(row=0, column=11, columnspan=2, pady=10)
 
-        num_replays_label = ttk.Label(filters_frame, text=f"Processed Replays: {len(self.sorted_data)}")
+        num_replays_label = ttk.Label(filters_frame, textvariable=self.replay_count_var)
         num_replays_label.grid(row=2, column=5)
 
         # button to apply filters
@@ -315,8 +325,12 @@ class TabReplays:
 
         self.replays_canvas.bind("<Configure>", self.on_canvas_configure)
 
-        for i in range(min(self.limit, len(self.sorted_data))):
+        for i in range(min(self.limit, self.replay_count)):
             self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
+
+    def update_replay_count(self):
+        self.replay_count = len(self.sorted_data)
+        self.replay_count_var.set(f"Processed Replays: {self.replay_count}")
 
     def apply_filters(self):
         self.replay_filters['mode'] = self.mode_var.get()
@@ -324,12 +338,11 @@ class TabReplays:
         self.limit = self.limit_var.get()
 
         filtered_data = []
-        num_replays = len(self.sorted_data)
 
-        print(f"num_replays: {num_replays}")
+        print(f"num_replays: {self.replay_count}")
 
         i = 0
-        while len(filtered_data) < self.limit and i != num_replays:
+        while len(filtered_data) < self.limit and i != self.replay_count:
             match_data = database.get_nth_value(self.sorted_data, i)
             i += 1
 
@@ -541,7 +554,7 @@ class TabReplays:
         for widget in self.inner_frame.winfo_children():
             widget.destroy()
 
-        for i in range(self.limit):
+        for i in range(min(self.limit, self.replay_count)):
             self.create_row(match_data=database.get_nth_value(self.sorted_data, i))
 
     def set_selected_match(self, match):

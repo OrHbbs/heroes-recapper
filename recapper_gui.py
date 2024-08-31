@@ -22,7 +22,7 @@ import database
 
 import pprint
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 class RecapperGui:
@@ -243,6 +243,8 @@ class TabReplays:
         self.limit = 10
         self.sorted_data = sorted_data
         self.tabs = tabs
+        self.hero_icon_cache = {}
+        self.bg_image_cache = {}
 
         self.replay_filters = {
             'mode': 'all',
@@ -325,9 +327,6 @@ class TabReplays:
         num_replays = len(self.sorted_data)
 
         print(f"num_replays: {num_replays}")
-
-        if hasattr(self, 'original_bg_images'):
-            self.original_bg_images.clear()
 
         i = 0
         while len(filtered_data) < self.limit and i != num_replays:
@@ -477,26 +476,31 @@ class TabReplays:
 
         bg_img_src = f"{RecapperGui.dist_prefix}images/{utils.clean_entity_name(match_data['map'])}.png"
 
-        try:
-            original_bg_img = Image.open(bg_img_src)
-            if not hasattr(self, 'original_bg_images'):
-                self.original_bg_images = []
-            self.original_bg_images.append(original_bg_img)
-            bg_img = original_bg_img.resize((row_width, row_height), Image.LANCZOS)
-            darkened_img = ImageEnhance.Brightness(bg_img).enhance(0.5)
-            bg_img = ImageTk.PhotoImage(darkened_img)
-        except Exception as e:
-            print(f"Image for {bg_img_src} not found or error: {e}")
-            bg_img = None
+        if bg_img_src not in self.bg_image_cache:
+            try:
+                original_bg_img = Image.open(bg_img_src)
+
+                bg_img = original_bg_img.resize((row_width, row_height), Image.LANCZOS)
+                darkened_img = ImageEnhance.Brightness(bg_img).enhance(0.5)
+
+                processed_img = ImageTk.PhotoImage(darkened_img)
+
+                self.bg_image_cache[bg_img_src] = processed_img
+            except Exception as e:
+                print(f"Image for {bg_img_src} not found or error: {e}")
+                processed_img = None
+        else:
+            processed_img = self.bg_image_cache[bg_img_src]
 
         sub_frame = tk.Frame(self.inner_frame, bd=2, relief="solid", height=row_height)
         sub_frame.pack(pady=10, fill=tk.X, expand=True)
 
         sub_canvas = tk.Canvas(sub_frame, height=300, cursor="hand2")
         sub_canvas.pack(fill=tk.BOTH, expand=True)
-        if bg_img:
-            self.bg_img_id = sub_canvas.create_image(0, 0, anchor="nw", image=bg_img)
-            sub_canvas.image = bg_img
+
+        if processed_img:
+            self.bg_img_id = sub_canvas.create_image(0, 0, anchor="nw", image=processed_img)
+            sub_canvas.image = processed_img
 
         if match_data['1_result'] == 1:
             left_color = "#00008B"
@@ -534,9 +538,6 @@ class TabReplays:
 
     def refresh_rows(self):
 
-        if hasattr(self, 'original_bg_images'):
-            self.original_bg_images.clear()
-
         for widget in self.inner_frame.winfo_children():
             widget.destroy()
 
@@ -551,10 +552,16 @@ class TabReplays:
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = utils.clean_entity_name(match_data[f"{index + 1}_hero"])
-        image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
 
         border_color = "blue" if index < 5 else "red"
-        img = draw_image(image_path=image_path, border_color=border_color, shape="circle")
+
+        # Check if the hero icon is already in the cache
+        if hero_name not in self.hero_icon_cache:
+            image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
+            img = draw_image(image_path=image_path, border_color=border_color, shape="circle")
+            self.hero_icon_cache[hero_name] = img
+        else:
+            img = self.hero_icon_cache[hero_name]
 
         image_button = tk.Button(canvas, highlightcolor=border_color, image=img,
                                  command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
@@ -569,10 +576,7 @@ class TabReplays:
                            border=1,
                            relief='groove')
 
-        if index < 5:
-            canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
-        else:
-            canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
+        canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
 
     def reposition_red_icons(self, canvas, window_id, index, y_pos):
         canvas_width = canvas.winfo_width()

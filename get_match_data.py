@@ -128,7 +128,7 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         # finding and adding battletags
 
         battlelobby_str = battlelobby.decode('utf-8', errors='ignore')
-        battletag_pattern = re.compile(r'([a-zA-Z0-9]+#[0-9]{4,5})')
+        battletag_pattern = re.compile(r'([\w\-\.\#\u00A0-\uFFFF]+#[0-9]{4,5})')
 
         battletags = battletag_pattern.findall(battlelobby_str)
 

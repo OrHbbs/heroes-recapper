@@ -22,10 +22,6 @@ Alternatively, just download the most recent release here: https://github.com/Or
 
 # Known issues
 
-Certain player names might not show up on "Match Details".
-
-Incomplete matches (such as those done in sandbox mode) will cause an error in the parser.
-
 For installation, installing heroprotocol via pip only gets you up to version protocol91756.py.
 
 # Notes

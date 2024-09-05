@@ -22,7 +22,7 @@ import database
 
 import pprint
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 
 class RecapperGui:
@@ -43,16 +43,26 @@ class RecapperGui:
         self.bg_img = None
         self.tree = None
 
+        if os.path.isfile(f"{self.recapper_dir}/temp_hero_table.json"):
+            # edge case handling: if temp_hero_table.json exists, then app was unexpectedly closed last time
+            shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
+
         try:
             with open(f"{self.recapper_dir}/replay_data.json", 'r') as f:
                 temp = utils.load_partial_json(f"{self.recapper_dir}/replay_data.json")
                 self.sorted_data = temp['sorted_data']
                 self.end_position = temp['end_position']
 
+                shutil.copy(f"{self.recapper_dir}/hero_table.json", f"{self.recapper_dir}/temp_hero_table.json")
+
                 print(f"replays: {len(self.sorted_data)}")
         except FileNotFoundError:
             self.sorted_data = SortedDict(lambda x: -x)
             self.end_position = 0
+
+            with open(f"{self.recapper_dir}/temp_hero_table.json", 'w') as f:
+                empty_hero_table = utils.create_empty_hero_table()
+                json.dump(empty_hero_table, f)
 
         self.inner_frame = None
         self.inner_frame_id = None
@@ -60,6 +70,9 @@ class RecapperGui:
         self.scrollbar = None
         self.button = None
         self.label = None
+        self.settings_is_open = False
+        self.settings = self.load_settings()
+        self.watch_path_var = tk.StringVar(value=self.settings.get("replay_path", ""))
 
         self.observer = None  # used for watchdog process
 
@@ -93,36 +106,17 @@ class RecapperGui:
         self.create_widgets()
 
     def on_closing(self):
-        if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
+        if tk.messagebox.askokcancel("Quit", "Do you want to quit?\nYour changes will be saved."):
             dat = dict(self.sorted_data)
 
             with open(f"{self.recapper_dir}/replay_data.json", "w") as f:
                 json.dump(dat, f)
+
+            if os.path.isfile(f"{self.recapper_dir}/temp_hero_table.json"):
+                os.remove(f"{self.recapper_dir}/temp_hero_table.json")
+
             print("Closing Heroes Recapper")
             root.destroy()
-
-    def create_menu(self):
-        menu_bar = tk.Menu(self.root)
-        self.root.config(menu=menu_bar)
-
-        file_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Select Replay", command=self.select_replay)
-        file_menu.add_command(label="Select Directory", command=self.select_directory)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit Without Saving", command=self.exit_without_saving)
-
-        settings_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label="Settings", menu=settings_menu)
-        settings_menu.add_command(label="Set Constraints")
-
-        about_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label="About", menu=about_menu)
-        about_menu.add_cascade(label="About")
-
-        help_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="quick guide", command=self.open_help_menu)
 
     def create_widgets(self):
         self.create_menu()
@@ -145,6 +139,31 @@ class RecapperGui:
         style = ttk.Style()
         style.configure("Treeview", rowheight=40)
 
+        # self.select_directory(self.settings['replay_path'])
+
+    def create_menu(self):
+        menu_bar = tk.Menu(self.root)
+        self.root.config(menu=menu_bar)
+
+        file_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Select Replay", command=self.select_replay)
+        file_menu.add_command(label="Select Directory", command=self.select_directory)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit Without Saving", command=self.exit_without_saving)
+
+        settings_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Settings", menu=settings_menu)
+        settings_menu.add_command(label="Change Settings", command=self.open_settings_menu)
+
+        # about_menu = tk.Menu(menu_bar, tearoff=0)
+        # menu_bar.add_cascade(label="About", menu=about_menu)
+        # about_menu.add_cascade(label="About")
+        #
+        # help_menu = tk.Menu(menu_bar, tearoff=0)
+        # menu_bar.add_cascade(label="Help", menu=help_menu)
+        # help_menu.add_command(label="quick guide", command=self.open_help_menu)
+
     def on_tab_selected(self, event):
         selected_tab = event.widget.select()
         selected_tab_widget = self.notebook.nametowidget(selected_tab)
@@ -152,14 +171,20 @@ class RecapperGui:
         if selected_tab_widget.winfo_id() == self.tab_match_details.frame.winfo_id():
             self.tab_match_details.refresh_tables()
 
-    def exit_without_saving(self):
-        print("exiting without saving")
+        elif selected_tab_widget.winfo_id() == self.tab_hero_stats.frame.winfo_id():
+            self.tab_hero_stats.refresh_tables()
 
-        try:
-            shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
-        except FileNotFoundError:
-            print("temp_hero_table.json not found")
-            pass
+    def exit_without_saving(self):
+        if tk.messagebox.askokcancel("Quit", "Do you want to quit \nwithout saving changes?"):
+            print("exiting without saving")
+
+            try:
+                shutil.copy(f"{self.recapper_dir}/temp_hero_table.json", f"{self.recapper_dir}/hero_table.json")
+                os.remove(f"{self.recapper_dir}/temp_hero_table.json")
+            except FileNotFoundError:
+                print("temp_hero_table.json not found")
+                os.remove(f"{self.recapper_dir}/hero_table.json")
+                pass
 
         root.destroy()
 
@@ -179,12 +204,16 @@ class RecapperGui:
 
         self.process_sorted_replays(paths=path)
 
-    def select_directory(self):
-        file_path = tk.filedialog.askdirectory()
+    def select_directory(self, file_path = None):
+        if file_path is None:
+            file_path = tk.filedialog.askdirectory()
 
         if not file_path:
             print("invalid file path")
             return
+
+        self.settings["replay_path"] = file_path
+        self.watch_path_var.set(file_path)
 
         # stops observing if user selects a new directory
         if self.observer:
@@ -226,6 +255,142 @@ class RecapperGui:
         if self.observer:
             self.observer.stop()
             self.observer.join()
+
+    def load_settings(self):
+        default_settings = {
+            "replay_path": "",
+            "low_memory_mode": False,
+            "session_recap_mode": False,
+            "auto_process": True
+        }
+
+        try:
+            with open(os.path.join(self.recapper_dir, "settings.txt"), 'r') as f:
+                for line in f:
+                    key, value = line.strip().split("=", 1)
+                    if key in default_settings:
+                        if value.lower() in ["true", "false"]:
+                            value = value.lower() == "true"
+                        default_settings[key] = value
+            return default_settings
+        except FileNotFoundError:
+            return default_settings
+
+    def open_settings_menu(self):
+        if self.settings_is_open:
+            root.bell()
+            return
+        self.settings_is_open = True
+
+        settings_window = tk.Toplevel(self.notebook)
+        settings_window.title("Settings")
+
+        settings_window.geometry("700x500")
+
+        settings_canvas = tk.Canvas(settings_window, relief=tk.SUNKEN)
+        settings_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # replay path
+        watch_path_frame = tk.Frame(settings_canvas)
+        watch_path_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        path_label = ttk.Label(watch_path_frame, text="File path to watch replays for:")
+        path_label.pack(side=tk.LEFT, padx=5)
+
+        self.watch_path_var = tk.StringVar(value=self.settings.get("replay_path", ""))
+        path_entry = ttk.Entry(watch_path_frame, textvariable=self.watch_path_var, state="readonly", width=50)
+        path_entry.pack(side=tk.LEFT, padx=5)
+
+        select_path_button = ttk.Button(watch_path_frame, text="Select Directory", command=self.select_directory)
+        select_path_button.pack(side=tk.LEFT, padx=5)
+
+        # low memory mode
+        low_memory_frame = tk.Frame(settings_canvas)
+        low_memory_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        self.low_memory_var = tk.BooleanVar(value=self.settings.get("low_memory_mode", False))
+        low_memory_checkbox = ttk.Checkbutton(low_memory_frame, text="Low memory mode",
+                                              variable=self.low_memory_var)
+        low_memory_checkbox.pack(side=tk.LEFT, padx=5)
+
+        CustomTooltipLabel(low_memory_checkbox,
+                                                text="Turns off background images for maps in order to save memory. (not functional yet)",
+                                                hover_delay=300,
+                                                justify="center",
+                                                background="#1c1c1c",
+                                                foreground="white",
+                                                border=1,
+                                                relief='groove')
+
+        # session recap mode
+        session_recap_frame = tk.Frame(settings_canvas)
+        session_recap_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        self.session_recap_var = tk.BooleanVar(value=self.settings.get("session_recap_mode", False))
+        session_recap_checkbox = ttk.Checkbutton(session_recap_frame, text="Session Recap Mode",
+                                                 variable=self.session_recap_var)
+        session_recap_checkbox.pack(side=tk.LEFT, padx=5)
+
+        CustomTooltipLabel(session_recap_checkbox,
+                           text="Only show games that were played this session. (not functional yet)",
+                           hover_delay=300,
+                           justify="center",
+                           background="#1c1c1c",
+                           foreground="white",
+                           border=1,
+                           relief='groove')
+
+        # automatically process replays
+        auto_process_frame = tk.Frame(settings_canvas)
+        auto_process_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        self.auto_process_var = tk.BooleanVar(value=self.settings.get("auto_process", True))
+        auto_process_checkbox = ttk.Checkbutton(auto_process_frame, text="Auto Process Replays",
+                                                 variable=self.auto_process_var)
+        auto_process_checkbox.pack(side=tk.LEFT, padx=5)
+
+        CustomTooltipLabel(auto_process_checkbox,
+                           text="Automatically process replays in the provided directory when opening Heroes Recapper. (not functional yet)",
+                           hover_delay=300,
+                           justify="center",
+                           background="#1c1c1c",
+                           foreground="white",
+                           border=1,
+                           relief='groove')
+
+        # save and cancel buttons
+        buttons_frame = tk.Frame(settings_canvas)
+        buttons_frame.pack(pady=20)
+
+        save_button = ttk.Button(buttons_frame, text="Save", command=lambda: self.save_settings(settings_window))
+        save_button.pack(side=tk.LEFT, padx=10)
+
+        cancel_button = ttk.Button(buttons_frame, text="Cancel", command=settings_window.destroy)
+        cancel_button.pack(side=tk.LEFT, padx=10)
+
+        settings_window.protocol("WM_DELETE_WINDOW", lambda: self.close_settings(settings_window))
+
+    def save_settings(self, window):
+        self.settings["replay_path"] = self.watch_path_var.get()
+        self.settings["low_memory_mode"] = self.low_memory_var.get()
+        self.settings["session_recap_mode"] = self.session_recap_var.get()
+        self.settings['auto_process'] = self.auto_process_var.get()
+
+        print("saving")
+        print(self.settings)
+
+        if not os.path.exists(self.recapper_dir):
+            os.makedirs(self.recapper_dir)
+
+        with open(os.path.join(self.recapper_dir, "settings.txt"), 'w') as f:
+            for key, value in self.settings.items():
+                f.write(f"{key}={value}\n")
+
+        self.close_settings(window)
+
+    def close_settings(self, window):
+        self.settings_is_open = False
+        window.destroy()
 
     def open_help_menu(self):
         pass
@@ -516,11 +681,11 @@ class TabReplays:
             sub_canvas.image = processed_img
 
         if match_data['1_result'] == 1:
-            left_color = "#00008B"
-            right_color = "#FFB6C1"
+            left_color = utils.color_consts["dark_blue"]
+            right_color = utils.color_consts["light_red"]
         else:
-            left_color = "#ADD8E6"
-            right_color = "#8B0000"
+            left_color = utils.color_consts["light_blue"]
+            right_color = utils.color_consts["dark_red"]
 
         sub_canvas.create_rectangle(0, 0, 100, row_height, fill=left_color, outline="")
         sub_canvas.create_rectangle(row_width, 0, row_width + 100, row_height, fill=right_color, outline="")
@@ -568,7 +733,6 @@ class TabReplays:
 
         border_color = "blue" if index < 5 else "red"
 
-        # Check if the hero icon is already in the cache
         if hero_name not in self.hero_icon_cache:
             image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
             img = draw_image(image_path=image_path, border_color=border_color, shape="circle")
@@ -617,6 +781,11 @@ class TabMatchDetails:
         self.talent_viewer_is_open = False
         self.extras_viewer_is_open = False
 
+        self.left_color = None
+        self.right_color = None
+        self.left_font_color = None
+        self.right_font_color = None
+
         self.frame = tk.Frame(parent)
 
         self.match_details_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
@@ -627,14 +796,30 @@ class TabMatchDetails:
     def create_widgets(self):
 
         if RecapperGui.selected_match is not None:
+
+            if RecapperGui.selected_match['1_result'] == 1:
+                self.left_color = utils.color_consts['dark_blue']
+                self.right_color = utils.color_consts['light_red']
+                self.left_font_color = utils.color_consts['black']
+                self.right_font_color = utils.color_consts['white']
+            else:
+                self.left_color = utils.color_consts['light_blue']
+                self.right_color = utils.color_consts['dark_red']
+                self.left_font_color = utils.color_consts['white']
+                self.right_font_color = utils.color_consts['black']
+
             self.create_score_table()
 
-            self.toggle_talent_button = ttk.Button(self.match_details_canvas, text="Show Talents",
-                                                   command=self.open_talent_viewer, cursor='hand2')
+            self.toggle_talent_button = ttk.Button(self.match_details_canvas,
+                                                   text="Show Talents",
+                                                   command=self.open_talent_viewer,
+                                                   cursor='hand2')
             self.toggle_talent_button.pack(pady=5)
 
-            self.toggle_extras_button = ttk.Button(self.match_details_canvas, text="Show Advanced Stats",
-                                                   command=self.open_extras_viewer, cursor='hand2')
+            self.toggle_extras_button = ttk.Button(self.match_details_canvas,
+                                                   text="Show Advanced Stats",
+                                                   command=self.open_extras_viewer,
+                                                   cursor='hand2')
             self.toggle_extras_button.pack(pady=5)
         else:
 
@@ -673,8 +858,8 @@ class TabMatchDetails:
 
         self.hero_images = {}
 
-        self.score_tree.tag_configure('blue_row', background='#08075e')
-        self.score_tree.tag_configure('red_row', background='#731009')
+        self.score_tree.tag_configure('blue_row', background=self.left_color, foreground=self.left_font_color)
+        self.score_tree.tag_configure('red_row', background=self.right_color, foreground=self.right_font_color)
 
         for i in range(1, 11):  # assuming 10 players
             prefix = f"{i}_"
@@ -736,12 +921,14 @@ class TabMatchDetails:
             prefix = f"{i}_"
             hero_name = utils.clean_entity_name(match_data.get(f"{prefix}hero"))
             player_name = match_data.get(f"{prefix}battletag")
+            winner = match_data['1_result']
 
             # determining position based on team (left or right column)
             column = 0 if i <= 5 else 11
             row = (i - 1) % 5
 
-            frame_color = "#08075e" if i <= 5 else "#731009"
+            frame_color = self.left_color if i <= 5 else self.right_color
+
             player_frame = tk.Frame(talent_subframe, bg=frame_color)
             player_frame.grid(row=row, column=column, columnspan=7, padx=5, pady=5, sticky="ew")
 
@@ -751,7 +938,8 @@ class TabMatchDetails:
             hero_label.image = hero_img
             hero_label.grid(row=0, column=0, padx=(20, 10), pady=10, sticky="w")
 
-            name_label = tk.Label(player_frame, text=player_name, width=20, anchor="w", bg=frame_color, fg="white")
+            fg_color = self.left_font_color if i <= 5 else self.right_font_color
+            name_label = tk.Label(player_frame, text=player_name, width=20, anchor="w", bg=frame_color, fg=fg_color)
             name_label.grid(row=0, column=1, padx=(0, 20), pady=10, sticky="w")
 
             with open(f'{RecapperGui.dist_prefix}heroes-talents/hero/{hero_name}.json', 'r') as f:
@@ -894,20 +1082,17 @@ class TabHeroStats:
         self.frame = tk.Frame(parent)
         self.sorted_data = sorted_data
         self.hero_stats_sort_state = {"column": None, "ascending": False}
+        self.hero_table = None
 
-        try:
-            with open(f"{RecapperGui.recapper_dir}/hero_table.json", 'r') as f:
-                self.hero_table = json.load(f)
-                shutil.copy(f"{RecapperGui.recapper_dir}/hero_table.json",
-                            f"{RecapperGui.recapper_dir}/temp_hero_table.json")
-        except FileNotFoundError:
-            self.hero_table = utils.create_empty_hero_table()
+        self.hero_stats_canvas = None
+        self.hero_stats_subframe = None
+        self.hero_stats_tree = None
 
         self.create_widgets()
 
     def create_widgets(self):
 
-        # todo from here until next todo block should be its own function, called by tab3 when a button is clicked
+        # todo from here until next todo block should be its own function, called by TabHeroStats when a button is clicked
 
         asdf = False
         if asdf:
@@ -952,14 +1137,24 @@ class TabHeroStats:
 
         # todo until here should be own function
 
-        label = tk.Label(self.frame, text="Hero Stats")
-        label.pack(pady=20, padx=20)
+        try:
+            with open(f"{RecapperGui.recapper_dir}/hero_table.json", 'r') as f:
+                self.hero_table = json.load(f)
+        except FileNotFoundError:
+            self.hero_table = utils.create_empty_hero_table()
 
-        self.tab3_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
-        self.tab3_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.create_hero_stats_table()
 
-        self.hero_stats_subframe = tk.Frame(self.tab3_canvas)
+    def create_hero_stats_table(self):
+
+        self.hero_stats_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
+        self.hero_stats_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.hero_stats_subframe = tk.Frame(self.hero_stats_canvas)
         self.hero_stats_subframe.pack(fill=tk.BOTH, expand=True)
+
+        label = tk.Label(self.hero_stats_subframe, text="Hero Stats")
+        label.pack(pady=20, padx=20)
 
         columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence",
                    "Games Played"]
@@ -971,21 +1166,20 @@ class TabHeroStats:
         scrollbar = tk.Scrollbar(self.hero_stats_subframe, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tab3_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none',
-                                      show="tree headings",
-                                      yscrollcommand=scrollbar.set, height=50)
-        self.tab3_tree.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=self.tab3_tree.yview)
+        self.hero_stats_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none',
+                                            show="tree headings",
+                                            yscrollcommand=scrollbar.set, height=50)
+        self.hero_stats_tree.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.hero_stats_tree.yview)
 
         for col, width in zip(columns, column_widths):
-            self.tab3_tree.heading(col, text=col,
-                                   command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.tab3_tree,
-                                                                           tab_sort_state=self.hero_stats_sort_state))
-            self.tab3_tree.column(col, anchor="w", width=width)
+            self.hero_stats_tree.heading(col, text=col,
+                                         command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.hero_stats_tree,
+                                                                                 tab_sort_state=self.hero_stats_sort_state))
+            self.hero_stats_tree.column(col, anchor="w", width=width)
 
         ht = self.hero_table
         total_games = len(self.sorted_data)
-        self.tab3_data = []
 
         self.tab3_hero_images = {}
 
@@ -1012,11 +1206,19 @@ class TabHeroStats:
 
             img = draw_image(image_path, border_width=0, size=40)
             self.tab3_hero_images[hero_name] = img
-            self.tab3_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[hero_name])
-            self.tab3_tree.heading('#0', text='Icon', anchor='center')
-            self.tab3_tree.column('#0', width=50)
+            self.hero_stats_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[hero_name])
+            self.hero_stats_tree.heading('#0', text='Icon', anchor='center')
+            self.hero_stats_tree.column('#0', width=50)
 
-        self.tab3_canvas.update_idletasks()
+        self.hero_stats_canvas.update_idletasks()
+
+    def refresh_tables(self):
+        if self.hero_stats_canvas is not None:
+            self.hero_stats_canvas.destroy()
+
+        self.create_widgets()
+
+        self.frame.update_idletasks()
 
 
 class TabPlayerStats:
@@ -1067,10 +1269,13 @@ def draw_image(image_path: str, border_color: str = "black", border_width: int =
 def sort_by_column(col, tab_tree, tab_sort_state):
     data = [(tab_tree.set(child, col), child) for child in tab_tree.get_children('')]
 
-    try:
-        data.sort(key=lambda x: int(x[0]), reverse=tab_sort_state.get(col, True))
-    except ValueError:
-        data.sort(key=lambda x: x[0], reverse=tab_sort_state.get(col, True))
+    def try_numeric(value):
+        try:
+            return float(value)
+        except ValueError:
+            return value
+
+    data.sort(key=lambda x: try_numeric(x[0]), reverse=tab_sort_state.get(col, True))
 
     for index, (val, child) in enumerate(data):
         tab_tree.move(child, '', index)

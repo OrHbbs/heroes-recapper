@@ -1152,9 +1152,17 @@ talent_tiers = ["1", "4", "7", "10", "13", "16", "20"]
 
 altname_to_shortname = {hero['alternativeName']: hero['shortName'] for hero in hero_data}
 
+color_consts = {
+    "black": "#ffffff",
+    "dark_blue": "#00008B",
+    "dark_red": "#8B0000",
+    "light_blue": "#ADD8E6",
+    "light_red": "#FFB6C1",
+    "white": "#000000"
+}
+
 
 def wald_interval(x, n, confidence=0.95):
-
     if x >= 1 and n >= 1:
         p = x / n
         # todo this is slightly more accurate, but requires importing scipy.stats. Increase accuracy later
@@ -1169,10 +1177,10 @@ def wald_interval(x, n, confidence=0.95):
 def erfinv(y):
     a = 0.147
     sign = 1 if y >= 0 else -1
-    ln_term = math.log(1 - y**2)
+    ln_term = math.log(1 - y ** 2)
     term = 2 / (math.pi * a) + ln_term / 2
     term2 = ln_term / a
-    return sign * math.sqrt(math.sqrt(term**2 - term2) - term)
+    return sign * math.sqrt(math.sqrt(term ** 2 - term2) - term)
 
 
 def clean_string(val: str, remove_spaces=True):
@@ -1278,6 +1286,7 @@ def get_id_by_hero(hero_name: string, check_alt_names=False):
         if check_alt_names:
             return list()
         return -1
+
 
 def get_shortname_by_altname(alt_name: string):
     """

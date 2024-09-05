@@ -159,8 +159,12 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
         if not path.endswith(".StormReplay"):
             print("unexpected file")
             continue
-        data = get_match_data.parse_replay(path=path, create_json=create_json, check_duplicate=True,
-                                           sorted_dict=sorted_dict)
+        try:
+            data = get_match_data.parse_replay(path=path, create_json=create_json, check_duplicate=True,
+                                               sorted_dict=sorted_dict)
+        except TypeError:
+            print(f"Error parsing replay: {path}")
+            continue
 
         if len(data) == 0:
             continue

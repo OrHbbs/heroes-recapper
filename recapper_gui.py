@@ -19,10 +19,11 @@ from watchdog.events import FileSystemEventHandler
 
 import utils
 import database
+# import player_stats
 
 import pprint
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 class RecapperGui:
@@ -81,7 +82,7 @@ class RecapperGui:
         self.tab_hero_stats = None
         self.tab_player_stats = None
 
-        self.tab1_filters = {
+        self.tab_replays_filters = {
             'mode': 'all',
             'maps': 'all',
             'names': ['any'] * 10,
@@ -90,6 +91,8 @@ class RecapperGui:
 
         self.mode_var = None
         self.map_var = None
+
+        # self.player_stats = player_stats.PlayerStats(self.recapper_dir)
 
         self.root = root
         self.hero_table = None
@@ -100,8 +103,7 @@ class RecapperGui:
         self.root.geometry("850x700")
 
         root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        self.selected_match = None
+        root.resizable(False, True)
 
         self.create_widgets()
 
@@ -236,14 +238,21 @@ class RecapperGui:
 
         self.start_watching_directory(file_path)
 
-    def process_sorted_replays(self, paths: list[str], ):
+    def process_sorted_replays(self, paths: list[str]):
+        self.root.config(cursor='wait')
+
         database.add_to_container_and_update_tables(
-            paths=paths, sorted_dict=self.sorted_data, recapper_dir=self.recapper_dir, hero_table=self.hero_table)
+            paths=paths,
+            sorted_dict=self.sorted_data,
+            recapper_dir=self.recapper_dir,
+            hero_table=self.hero_table,
+            p_stats=self.player_stats
+        )
         self.tab_replays.update_replay_count()
         self.tab_replays.refresh_rows()
         self.root.update_idletasks()
 
-        # utils.update_player_tables()
+        self.root.config(cursor='')
 
     def start_watching_directory(self, directory):
         event_handler = ReplayHandler(self.process_sorted_replays)
@@ -414,6 +423,7 @@ class TabReplays:
         self.sorted_data = sorted_data
         self.tabs = tabs
         self.hero_icon_cache = {}
+        self.party_cache = {}
         self.bg_image_cache = {}
 
         self.replay_count = len(sorted_data)
@@ -471,7 +481,7 @@ class TabReplays:
         limit_label = ttk.Label(filters_frame, text='Limit: ')
         limit_label.grid(row=2, column=10)
         self.limit_var = tk.IntVar(value=self.limit)
-        limit_combobox = ttk.Combobox(filters_frame, textvariable=self.limit_var, values=[5, 10, 25, 50], state="readonly", width=3)
+        limit_combobox = ttk.Combobox(filters_frame, textvariable=self.limit_var, values=[5, 10, 25, 50, 100], state="readonly", width=3)
         limit_combobox.grid(row=2, column=11, pady=10)
 
         self.replays_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
@@ -570,6 +580,8 @@ class TabReplays:
 
         for j in range(min(self.limit, len(filtered_data))):
             self.create_row(match_data=filtered_data[j])
+
+        # todo show the winrates of row that was filtered for
 
     def clear_filters(self):
         self.replay_filters = {
@@ -687,8 +699,8 @@ class TabReplays:
             left_color = utils.color_consts["light_blue"]
             right_color = utils.color_consts["dark_red"]
 
-        sub_canvas.create_rectangle(0, 0, 100, row_height, fill=left_color, outline="")
-        sub_canvas.create_rectangle(row_width, 0, row_width + 100, row_height, fill=right_color, outline="")
+        sub_canvas.create_rectangle(0, 0, 105, row_height, fill=left_color, outline="")
+        sub_canvas.create_rectangle(row_width, 0, row_width + 105, row_height, fill=right_color, outline="")
 
         for i in range(5):
             x_pos = 25
@@ -705,14 +717,18 @@ class TabReplays:
                                                        f"{match_data['gameMode']}: {match_data['map']}\n"
                                                        f"{str(datetime.timedelta(seconds=int(match_data['duration']) - 45))}\n"
                                                        f"{utils.get_winner(match_data['1_result'])}\n"
-                                                       f"{match_data['1_name']}       {match_data['6_name']}\n"
-                                                       f"{match_data['2_name']}       {match_data['7_name']}\n"
-                                                       f"{match_data['3_name']}       {match_data['8_name']}\n"
-                                                       f"{match_data['4_name']}       {match_data['9_name']}\n"
-                                                       f"{match_data['5_name']}       {match_data['10_name']}\n",
+                                                       f"{self.add_row_text(match_data['1_name'], match_data['6_name'])}"
+                                                       f"{self.add_row_text(match_data['2_name'], match_data['7_name'])}"
+                                                       f"{self.add_row_text(match_data['3_name'], match_data['8_name'])}"
+                                                       f"{self.add_row_text(match_data['4_name'], match_data['9_name'])}"
+                                                       f"{self.add_row_text(match_data['5_name'], match_data['10_name'])}",
                                          fill="white", font=("Segoe UI", 15, "bold"), justify="center", anchor="n")
 
         sub_canvas.bind("<Button-1>", lambda e, match=match_data: self.set_selected_match(match))
+
+    def add_row_text(self, name1, name2):
+        spacing = " " * int(30-len(name1)-len(name2))
+        return f"{name1}{spacing}{name2}\n"
 
     def refresh_rows(self):
 
@@ -730,12 +746,11 @@ class TabReplays:
 
     def create_hero_icon(self, canvas, match_data, index, x_pos, y_pos):
         hero_name = utils.clean_entity_name(match_data[f"{index + 1}_hero"])
-
         border_color = "blue" if index < 5 else "red"
 
         if hero_name not in self.hero_icon_cache:
             image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
-            img = draw_image(image_path=image_path, border_color=border_color, shape="circle")
+            img = draw_image(image_path=image_path, shape="square")
             self.hero_icon_cache[hero_name] = img
         else:
             img = self.hero_icon_cache[hero_name]
@@ -743,6 +758,27 @@ class TabReplays:
         image_button = tk.Button(canvas, highlightcolor=border_color, image=img,
                                  command=lambda hero=hero_name: self.on_hero_click(hero), borderwidth='2')
         image_button.image = img
+
+        canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
+
+        party_number = match_data.get(f"{index + 1}_party")
+
+        if party_number > 0:
+            if party_number not in self.party_cache:
+                overlay_image_path = f"{RecapperGui.dist_prefix}images/party-{party_number}.png"
+                overlay_img = Image.open(overlay_image_path).resize((20, 20), Image.LANCZOS)
+                overlay_img = ImageTk.PhotoImage(overlay_img)
+                self.party_cache[party_number] = overlay_img
+            else:
+                overlay_img = self.party_cache[party_number]
+
+            overlay_label = tk.Label(canvas, image=overlay_img, borderwidth=0)
+            overlay_label.image = overlay_img
+
+            overlay_x_pos = x_pos + img.width() if index <= 4 else x_pos - 15
+            overlay_y_pos = y_pos + 17
+
+            canvas.create_window(overlay_x_pos, overlay_y_pos, anchor='nw', window=overlay_label)
 
         CustomTooltipLabel(image_button,
                            text=match_data[f"{index + 1}_name"],
@@ -752,8 +788,6 @@ class TabReplays:
                            foreground="white",
                            border=1,
                            relief='groove')
-
-        canvas.create_window(x_pos, y_pos, anchor='nw', window=image_button)
 
     def reposition_red_icons(self, canvas, window_id, index, y_pos):
         canvas_width = canvas.winfo_width()
@@ -840,15 +874,18 @@ class TabMatchDetails:
                          )
         label.pack(pady=20, padx=20)
 
-        columns = ["Number", "Player", "Hero", "Kills", "Assists", "Deaths", "Hero Dmg", "Siege Dmg", "Healing",
-                   "Dmg Taken", "XP"]
-        column_widths = [10, 80, 60, 5, 5, 5, 30, 30, 30, 30, 20]
+        columns = ["Number", "Player", "Acc. Level", "Hero", "Kills", "Assists", "Deaths", "Hero Dmg", "Siege Dmg",
+                   "Healing", "Dmg Taken", "XP"]
+        column_widths = [5, 80, 5, 60, 5, 5, 5, 30, 30, 30, 30, 20]
 
         self.score_subframe = tk.Frame(self.match_details_canvas)
         self.score_subframe.pack(fill=tk.BOTH, expand=True)
 
         self.score_tree = ttk.Treeview(self.score_subframe, columns=columns, show="tree headings")
         self.score_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.score_tree.bind('<Button-1>', lambda event, tree=self.score_tree: prevent_resize(event, tree))
+        self.score_tree.bind('<Motion>', lambda event, tree=self.score_tree: prevent_resize(event, tree))
 
         for col, width in zip(columns, column_widths):
             self.score_tree.heading(col, text=col,
@@ -867,6 +904,7 @@ class TabMatchDetails:
             row = [
                 i,
                 match_data.get(f"{prefix}battletag"),
+                match_data.get(f"{prefix}accountLevel"),
                 match_data.get(f"{prefix}hero", ""),
                 match_data.get(f"{prefix}SoloKill", 0),
                 match_data.get(f"{prefix}Assists", 0),
@@ -1017,6 +1055,10 @@ class TabMatchDetails:
 
         extras_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        extras_tree.bind('<Button-1>', lambda event, tree=extras_tree: prevent_resize(event, tree))
+        extras_tree.bind('<Motion>', lambda event, tree=extras_tree: prevent_resize(event, tree))
+
+
         for col, width in zip(columns, column_widths):
             extras_tree.heading(col, text=col, anchor="center",
                                 command=lambda _col=col: sort_by_column(col=_col,
@@ -1079,6 +1121,9 @@ class TabMatchDetails:
 
 class TabHeroStats:
     def __init__(self, parent, sorted_data):
+        self.talent_stats = None
+        self.scrollbar = None
+        self.buttons = []
         self.frame = tk.Frame(parent)
         self.sorted_data = sorted_data
         self.hero_stats_sort_state = {"column": None, "ascending": False}
@@ -1087,55 +1132,17 @@ class TabHeroStats:
         self.hero_stats_canvas = None
         self.hero_stats_subframe = None
         self.hero_stats_tree = None
+        self.button_refs = {}
+        self.hero_images = {}
+
+        self.talent_frame = None
+        self.talent_icons = {}
+        self.talent_tree = None
+        self.talent_tree_is_open = False
 
         self.create_widgets()
 
     def create_widgets(self):
-
-        # todo from here until next todo block should be its own function, called by TabHeroStats when a button is clicked
-
-        asdf = False
-        if asdf:
-            with open('heroes-talents/hero/genji.json', 'r') as f:
-                hero_talents = json.load(f)
-
-            talent = {
-                'icons': [],
-                'names': [],
-                'descriptions': [],
-                'cooldown': [],
-                'games': [],
-                'wins': [],
-                'popularity': [],
-                'winrate': []
-            }
-
-            hero_id = utils.get_id_by_hero('genji')
-
-            for i in range(len(utils.talent_tiers)):
-                for key in talent:
-                    talent[key].append([])
-                tier_i_talents = hero_talents["talents"][utils.talent_tiers[i]]
-                for j in range(len(tier_i_talents)):
-                    talent['icons'][i].append(
-                        f"{self.dist_prefix}/heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
-                    talent['names'][i].append(tier_i_talents[j]['name'])
-                    talent['descriptions'][i].append(tier_i_talents[j]['description'])
-
-                    if tier_i_talents[j].get('cooldown') is not None:
-                        talent['cooldown'][i].append(tier_i_talents[j]['cooldown'])
-                    else:
-                        talent['cooldown'][i].append('')
-
-                    games_played = self.hero_table[hero_id - 1]['talentGames'][i][j]
-                    games_won = self.hero_table[hero_id - 1]['talentWins'][i][j]
-
-                    talent['games'][i].append(games_played)
-                    talent['wins'][i].append(games_won)
-                    talent['winrate'][i].append(
-                        f"{100 * round(games_won / games_played, 4) if games_played != 0 else 0}%")
-
-        # todo until here should be own function
 
         try:
             with open(f"{RecapperGui.recapper_dir}/hero_table.json", 'r') as f:
@@ -1146,7 +1153,6 @@ class TabHeroStats:
         self.create_hero_stats_table()
 
     def create_hero_stats_table(self):
-
         self.hero_stats_canvas = tk.Canvas(self.frame, relief=tk.SUNKEN)
         self.hero_stats_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -1154,14 +1160,13 @@ class TabHeroStats:
         self.hero_stats_subframe.pack(fill=tk.BOTH, expand=True)
 
         label = tk.Label(self.hero_stats_subframe, text="Hero Stats")
-        label.pack(pady=20, padx=20)
+        label.pack(pady=15, padx=20)
 
-        columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence",
-                   "Games Played"]
-        column_widths = [50, 100, 80, 80, 100, 100, 100, 100, 100, 120]
+        columns = ["Hero", "Winrate %", "Confidence", "Popularity %", "Pick Rate %", "Ban Rate %", "Influence", "Games", "Talent Winrates"]
+        column_widths = [100, 50, 50, 50, 50, 50, 50, 50, 100]
 
         style = ttk.Style()
-        style.configure("Treeview", rowheight=40)
+        style.configure("Treeview.Heading", font=('Calibri', 10, 'bold'))
 
         scrollbar = tk.Scrollbar(self.hero_stats_subframe, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -1169,48 +1174,238 @@ class TabHeroStats:
         self.hero_stats_tree = ttk.Treeview(self.hero_stats_subframe, columns=columns, selectmode='none',
                                             show="tree headings",
                                             yscrollcommand=scrollbar.set, height=50)
-        self.hero_stats_tree.pack(fill=tk.BOTH, expand=True)
+
         scrollbar.config(command=self.hero_stats_tree.yview)
 
         for col, width in zip(columns, column_widths):
-            self.hero_stats_tree.heading(col, text=col,
-                                         command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.hero_stats_tree,
-                                                                                 tab_sort_state=self.hero_stats_sort_state))
-            self.hero_stats_tree.column(col, anchor="w", width=width)
+            self.hero_stats_tree.heading(col, text=col, command=lambda _col=col: sort_by_column(col=_col, tab_tree=self.hero_stats_tree,
+                                                                                                tab_sort_state=self.hero_stats_sort_state))
+            self.hero_stats_tree.column(col, anchor="center", width=width)
 
         ht = self.hero_table
         total_games = len(self.sorted_data)
 
-        self.tab3_hero_images = {}
+        self.hero_images = {}
+        self.button_refs = {}
 
         for i, hero in enumerate(ht):
             games_played = hero.get("gamesPlayed")
             games_won = hero.get('gamesWon', 0)
             pick_rate = hero.get('gamesPlayed', 0) / total_games if total_games != 0 else 0
             ban_rate = hero.get('gamesBanned', 0) / total_games if total_games != 0 else 0
+            winrate = games_won / games_played if games_played != 0 else 0
+
+            influence = 0 if ban_rate == 1 else ((winrate - 0.5) * (100 * pick_rate / (100 - (100 * ban_rate))) * 10000)
 
             hero_name = utils.clean_entity_name(hero.get("name"))
 
             row = [
-                hero_name,
-                f"{round(100 * (games_won / games_played) if games_played != 0 else 0, 3)}",
-                f"±{round(100 * utils.wald_interval(x=games_won, n=games_played), 3)} ",
-                f"{round(100 * (pick_rate + ban_rate), 3)}",
-                f"{round(100 * pick_rate, 3)}",
-                f"{round(100 * ban_rate, 3)}",
-                "influence",  # need to calculate later
-                games_played
+                hero_name,                                                                  # Hero
+                f"{'%.1f' % (100 * winrate)}",                                              # Winrate
+                f"±{'%.1f' % (100 * utils.wald_interval(x=games_won, n=games_played))}",    # Confidence
+                f"{'%.1f' % (100 * (pick_rate + ban_rate))}",                               # Popularity
+                f"{'%.1f' % (100 * pick_rate)}",                                            # Pick Rate
+                f"{'%.1f' % (100 * ban_rate)}",                                             # Ban Rate
+                f"{'%.0f' % influence}",                                                    # Influence
+                games_played,                                                               # Games Played
+                "Click to View"                                                             # Talent Winrates
             ]
 
             image_path = f"{RecapperGui.dist_prefix}heroes-talents/images/heroes/{hero_name}.png"
-
             img = draw_image(image_path, border_width=0, size=40)
-            self.tab3_hero_images[hero_name] = img
-            self.hero_stats_tree.insert("", tk.END, text='', values=row, image=self.tab3_hero_images[hero_name])
+            self.hero_images[hero_name] = img
+
+            self.hero_stats_tree.insert("", tk.END, text='', values=row, image=self.hero_images[hero_name])
             self.hero_stats_tree.heading('#0', text='Icon', anchor='center')
             self.hero_stats_tree.column('#0', width=50)
 
+        self.hero_stats_tree.pack(fill=tk.BOTH, expand=True)
+
+        self.hero_stats_tree.bind("<Button-1>", self.on_click_talent_winrates)
+
+        # Hacky way of doing the UI for "View Talents". Might want to optimize later
+        self.hero_stats_tree.bind("<Motion>", self.on_mouse_motion)
         self.hero_stats_canvas.update_idletasks()
+
+    def on_mouse_motion(self, event):
+        if self.hero_stats_tree.identify_region(event.x, event.y) == "separator":
+            return "break"
+
+        column = self.hero_stats_tree.identify_column(event.x)
+
+        if column == '#9' and event.y > 33:
+            self.hero_stats_tree.config(cursor="hand2")
+        else:
+            self.hero_stats_tree.config(cursor="")
+
+    def on_click_talent_winrates(self, event):
+        if self.hero_stats_tree.identify_region(event.x, event.y) == "separator":
+            return "break"
+
+        item = self.hero_stats_tree.identify('item', event.x, event.y)
+        column = self.hero_stats_tree.identify_column(event.x)
+
+        if column == '#9' and event.y > 33:
+            hero_data = self.hero_stats_tree.item(item, "values")
+            hero_name = hero_data[0]
+
+            if self.talent_tree_is_open:
+                self.talent_tree.bell()
+            else:
+                self.open_talent_winrates_window(hero_name)
+
+    def open_talent_winrates_window(self, hero_name):
+        win = tk.Toplevel(self.frame)
+        win.title(f"{hero_name.capitalize()} Talent Winrates")
+        win.geometry("800x700")
+        win.resizable(False, True)
+
+        self.talent_tree_is_open = True
+
+        label = tk.Label(win, text=f"Talent Winrates for {hero_name.capitalize()}", font=("Calibri", 12))
+        label.pack(pady=20)
+
+        canvas = tk.Canvas(win)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.talent_frame = tk.Frame(canvas)
+        self.talent_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        scrollbar = tk.Scrollbar(self.talent_frame, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def resize_canvas(event):
+            canvas_width = event.width
+            canvas.itemconfig(self.talent_frame_id, width=canvas_width)
+
+        self.talent_frame_id = canvas.create_window((0, 0), window=self.talent_frame, anchor="nw")
+        canvas.bind("<Configure>", resize_canvas)
+
+        columns = ["Name", "Winrate", "N. Winrate", "Popularity", "Games Played"]
+        column_widths = [150, 50, 50, 50, 50]
+
+        style = ttk.Style()
+        style.layout("TalentTreeview", [
+            ("Treeview.field", {"sticky": "nswe"})
+        ])
+        style.configure("TalentTreeview", rowheight=60, padding=(0, 2), anchor="center")
+
+        self.talent_tree = ttk.Treeview(self.talent_frame,
+                                        columns=columns,
+                                        show='tree headings',
+                                        style="TalentTreeview",
+                                        yscrollcommand=scrollbar.set)
+        self.talent_tree.pack(fill=tk.BOTH, expand=True)
+
+        for col, width in zip(columns, column_widths):
+            self.talent_tree.heading(col, text=col)
+            self.talent_tree.column(col, anchor="center", width=width)
+
+        talent_stats = self.get_talent_stats(hero_name)
+        talent_tiers = [1, 4, 7, 10, 13, 16, 20]
+        self.talent_icons = {}
+
+        for i, level in enumerate(talent_tiers):
+            divider_text = f"Level {level} Talents"
+            self.talent_tree.insert("", "end", values=("", divider_text, "", ""), tags=("divider",))
+
+            for j in range(len(talent_stats['names'][i])):
+                talent_name = talent_stats['names'][i][j]
+                talent_games_played = talent_stats['games'][i][j]
+                total_games_played = sum(talent_stats['games'][i])
+
+                row = [
+                    talent_name,
+                    talent_stats['winrate'][i][j],
+                    talent_stats['normalized_winrate'][i][j],
+                    f"{'%.2f' % (100 * talent_games_played / total_games_played)}%" if total_games_played > 0 else "0%",
+                    f"{talent_games_played}",
+                ]
+
+                if self.talent_icons.get(talent_name) is None:
+                    img = draw_image(talent_stats['icons'][i][j], border_width=0, size=50, shape="square")
+                    self.talent_icons[talent_name] = img
+
+                self.talent_tree.insert("", tk.END, text='', values=row, image=self.talent_icons[talent_name])
+                self.talent_tree.heading('#0', text='Icon', anchor='center')
+                self.talent_tree.column('#0', width=30)
+
+        self.talent_tree.tag_configure("divider", background="#1c1cba", font=("Calibri", 10, "bold"))
+
+        self.talent_tree.bind('<Button-1>', lambda event, tree=self.talent_tree: prevent_resize(event, tree))
+        self.talent_tree.bind('<Motion>', lambda event, tree=self.talent_tree: self.on_talent_mouse_motion(event))
+
+        scrollbar.config(command=self.talent_tree.yview)
+
+        win.protocol("WM_DELETE_WINDOW", lambda: self.close_talent_stats(win))
+
+    def on_talent_mouse_motion(self, event):
+        if self.talent_tree.identify_region(event.x, event.y) == "separator":
+            return "break"
+
+        # item = self.talent_tree.identify('item', event.x, event.y)
+        # column = self.talent_tree.identify_column(event.x)
+        #
+        # talent_data = self.talent_tree.item(item, "values")
+        # talent_name = talent_data[0]
+        #
+        # if column == "#0":
+        #     pass
+
+    def get_talent_stats(self, hero):
+        with open(f'heroes-talents/hero/{hero}.json', 'r') as f:
+            hero_talents = json.load(f)
+
+        talent = {
+            'icons': [],
+            'names': [],
+            'descriptions': [],
+            'types': [],
+            'cooldown': [],
+            'games': [],
+            'wins': [],
+            'winrate': [],
+            'normalized_games': [],
+            'normalized_wins': [],
+            'normalized_winrate': []
+        }
+
+        hero_id = utils.get_id_by_hero(hero)
+
+        for i in range(len(utils.talent_tiers)):
+            for key in talent:
+                talent[key].append([])
+            tier_i_talents = hero_talents["talents"][utils.talent_tiers[i]]
+
+            for j in range(len(tier_i_talents)):
+                talent['icons'][i].append(
+                    f".{RecapperGui.dist_prefix}/heroes-talents/images/talents/{tier_i_talents[j]['icon']}")
+                talent['names'][i].append(tier_i_talents[j]['name'])
+                talent['descriptions'][i].append(tier_i_talents[j]['description'])
+                talent['types'][i].append(tier_i_talents[j]['type'])
+
+                if tier_i_talents[j].get('cooldown') is not None:
+                    talent['cooldown'][i].append(tier_i_talents[j]['cooldown'])
+                else:
+                    talent['cooldown'][i].append('')
+
+                games_played = self.hero_table[hero_id - 1]['talentGames'][i][j]
+                games_won = self.hero_table[hero_id - 1]['talentWins'][i][j]
+                normalized_games_played = self.hero_table[hero_id - 1]['talentNormalizedGames'][i][j]
+                normalized_games_won = self.hero_table[hero_id - 1]['talentNormalizedWins'][i][j]
+
+                talent['games'][i].append(games_played)
+                talent['wins'][i].append(games_won)
+                talent['winrate'][i].append(
+                    f"{'%.2f' % (100 * games_won / games_played)}%" if games_played != 0 else "0.00%"
+                )
+                talent['normalized_games'][i].append(normalized_games_played)
+                talent['normalized_wins'][i].append(normalized_games_won)
+                talent['normalized_winrate'][i].append(
+                    f"{'%.2f' % (100 * normalized_games_won / normalized_games_played)}%" if normalized_games_played != 0 else "0.00%"
+                )
+
+        return talent
 
     def refresh_tables(self):
         if self.hero_stats_canvas is not None:
@@ -1220,13 +1415,23 @@ class TabHeroStats:
 
         self.frame.update_idletasks()
 
+    def close_talent_stats(self, window):
+        self.talent_icons = {}
+        self.talent_trees = {}
+        self.talent_tree_sort_state = []
+        for widget in self.talent_frame.winfo_children():
+            widget.destroy()
+        window.destroy()
+
+        self.talent_tree_is_open = False
+
 
 class TabPlayerStats:
     def __init__(self, parent, sorted_data):
         self.frame = tk.Frame(parent)
         self.sorted_data = sorted_data
 
-    def create_tab4_content(self):
+    def create_widgets(self):
         label = tk.Label(self.frame, text="Player Stats")
         label.pack(pady=20, padx=20)
 
@@ -1240,7 +1445,7 @@ class TabPlayerStats:
         self.tree.pack(fill=tk.BOTH, expand=True)
 
 
-def draw_image(image_path: str, border_color: str = "black", border_width: int = 2, size=50, shape="circle"):
+def draw_image(image_path: str, border_color: str = "black", border_width: int = 0, size=50, shape="circle"):
     img = Image.open(image_path).resize((size, size), Image.LANCZOS).convert("RGBA")
 
     mask = Image.new("L", img.size, 0)
@@ -1288,6 +1493,11 @@ def sort_by_column(col, tab_tree, tab_sort_state):
             tab_tree.heading(column, text=f"{col} {direction}")
         else:
             tab_tree.heading(column, text=column)
+
+
+def prevent_resize(event, tree):
+    if tree.identify_region(event.x, event.y) == "separator":
+        return "break"
 
 
 if __name__ == "__main__":

@@ -2,4 +2,5 @@
 /dist/
 /venv/
 /test-dat/
+/test-data/
 /.idea/

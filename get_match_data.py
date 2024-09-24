@@ -1,3 +1,7 @@
+import pprint
+import struct
+from collections import defaultdict
+
 from heroprotocol.versions import protocol92264 as protocol
 from datetime import datetime, timedelta
 import json
@@ -54,6 +58,56 @@ def get_player_data(unfiltered_data: dict, num_players: int, wanted_keys: list[s
     return details
 
 
+def parse_battlelobby(battlelobby, players):
+    """Gets useful information out of battlelobby"""
+
+    battletag_pattern = re.compile(rb'([\w\-\.\#\x80-\xFF]+#[0-9]{4,5})')
+
+    battletags = battletag_pattern.finditer(battlelobby)
+
+    i = 0
+    party_num = 0
+    prev_byte_sequence = None
+
+    for match in battletags:
+        battletag = match.group(0).decode('utf-8', errors='ignore')
+
+        start_pos = match.start()
+        end_pos = match.end()
+
+        # lvl info is stored in the 4 bytes after the battletag, in big-endian
+        account_level_bytes = battlelobby[end_pos:end_pos + 4]
+        account_level = struct.unpack('>I', account_level_bytes)[0]
+
+        # party info is stored in the 8 bytes before the battletag
+        party_byte_sequence = battlelobby[start_pos - 8:start_pos - 1]
+
+        players[i]["battletag"] = battletag
+        players[i]["accountLevel"] = account_level
+
+        if party_byte_sequence.startswith(b'\x00@'):
+            players[i]["party"] = 0
+        elif party_byte_sequence != prev_byte_sequence:  # different party detected
+            party_num += 1
+            players[i]["party"] = party_num
+        else:
+            players[i]["party"] = party_num
+
+        prev_byte_sequence = party_byte_sequence
+
+        i += 1
+
+        if i == 5:
+            party_num = 2
+
+
+    if party_num >= 5:
+        print("warning in parse_battlelobby, invalid party detected")
+        print(players)
+
+    return
+
+
 def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = False, sorted_dict=None):
     print(path)
 
@@ -77,6 +131,7 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
         # not parsing customs for now
         if game_mode is None:
+            print("not parsing customs for now")
             return {}
 
         header = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
@@ -89,6 +144,11 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         tracker_events = protocol.decode_replay_tracker_events(mpyq.read_file('replay.tracker.events'))
 
         player_list = details['m_playerList']
+
+        patch = (f"{header['m_version']['m_major']}."
+                 f"{header['m_version']['m_minor']}."
+                 f"{header['m_version']['m_revision']}."
+                 f"{header['m_version']['m_build']}")
 
         del details['m_playerList']
 
@@ -106,7 +166,8 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
             # 'firstFort':
             'bansBlue': ["", "", ""],
             'bansRed': ["", "", ""],
-            'firstPick': None
+            'firstPick': None,
+            'pickOrder': ""
         }
 
         players = []
@@ -125,16 +186,7 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
             players.append(player_output)
 
-        # finding and adding battletags
-
-        battlelobby_str = battlelobby.decode('utf-8', errors='ignore')
-        battletag_pattern = re.compile(r'([\w\-\.\#\u00A0-\uFFFF]+#[0-9]{4,5})')
-
-        battletags = battletag_pattern.findall(battlelobby_str)
-
-        for i in range(len(battletags)):
-            players[i]['battletag'] = battletags[i]
-        #
+        parse_battlelobby(battlelobby, players)
 
         output['players'] = players
 
@@ -184,4 +236,5 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
                 json.dump(output, f, ensure_ascii=False, indent=4)
 
         return output
+
     return {}

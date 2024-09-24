@@ -6,6 +6,7 @@ from sortedcontainers import SortedDict
 import get_match_data
 
 import utils
+# import player_stats
 
 #todo: im using sortedcontainers instead of pandas dataframes. Might want to change this later
 
@@ -144,7 +145,7 @@ def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: boo
 
 
 def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict, recapper_dir: str, create_json: bool = False,
-                                       hero_table=None, ):
+                                       hero_table=None, p_stats=None):
 
     print(recapper_dir)
 
@@ -159,6 +160,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
         if not path.endswith(".StormReplay"):
             print("unexpected file")
             continue
+
         try:
             data = get_match_data.parse_replay(path=path, create_json=create_json, check_duplicate=True,
                                                sorted_dict=sorted_dict)
@@ -278,9 +280,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
 
                     ht['talentWins'][j][selected_talent] += 1
 
-                    # normalized talent wins
-
-                    if min_level >= int(utils.talent_tiers[j - 1]):
+                    if min_level >= int(utils.talent_tiers[j]):
                         ht['talentNormalizedWins'][j][selected_talent] += 1
 
             # updating hero bans
@@ -295,10 +295,14 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
 
                 hero_table[match_ban_id - 1]['gamesBanned'] += 1
 
+            # updating player stats
+            # todo uncomment the following once it's working
+
+            # if p_stats is not None:
+            #     p_stats.process_new_match(match_data=match_data)
+
         with open(f"{recapper_dir}/hero_table.json", "w") as outfile:
             json.dump(hero_table, outfile)
-
-    return sorted_dict
 
 
 def update_tables(replay_data):
@@ -332,10 +336,3 @@ def get_nth_value(sorted_dict: SortedDict, i: int):
     key = sorted_dict.iloc[i]
     return sorted_dict[key]
 
-
-# def save_to_pickle(path, matches_database):
-#     matches_database.to_pickle(path)
-#
-#
-# def load_from_pickle(path):
-#     return pd.read_pickle(path)

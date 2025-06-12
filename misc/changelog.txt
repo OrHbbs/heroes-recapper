@@ -1,0 +1,11 @@
+Implemented player stats tab - choose a player to view some specific details about them.
+Heroes Recapper will process some useful player stats each time it reads in a replay.
+
+Redid the talent viewer in hero stats tab
+Now hides heroes with 0 games in the hero stats tab
+
+Many UI adjustments and improvements
+
+TODO:
+
+arrow button to go to next page of replays and players

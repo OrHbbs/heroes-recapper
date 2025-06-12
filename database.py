@@ -6,7 +6,7 @@ from sortedcontainers import SortedDict
 import get_match_data
 
 import utils
-# import player_stats
+import player_stats
 
 #todo: im using sortedcontainers instead of pandas dataframes. Might want to change this later
 
@@ -102,6 +102,7 @@ import utils
 
 
 def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: bool = False):
+    """ deprecated """
     for path in paths:
         if not path.endswith(".StormReplay"):
             print("unexpected file")
@@ -119,11 +120,15 @@ def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: boo
             match_data = {
                 "rawDate": raw_date,
                 "date": data["date"],
+                "version": data["version"],
                 "map": data["map"],
                 "duration": data["duration"],
                 "gameMode": data["gameMode"],
+                "firstPick": data["firstPick"],
                 "levelRed": data["players"][0]["Level"],
-                "levelBlue": data["players"][-1]["Level"]
+                "levelBlue": data["players"][-1]["Level"],
+                "bansBlue": data["bansBlue"],
+                "bansRed": data["bansRed"],
             }
 
             for each_player in data['players']:
@@ -144,8 +149,12 @@ def add_to_container(paths: list[str], sorted_dict: SortedDict, create_json: boo
     return sorted_dict
 
 
-def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict, recapper_dir: str, create_json: bool = False,
-                                       hero_table=None, p_stats=None):
+def add_to_container_and_update_tables(paths: list[str],
+                                       sorted_dict: SortedDict,
+                                       recapper_dir: str,
+                                       create_json: bool = False,
+                                       hero_table=None,
+                                       p_stats=None):
 
     print(recapper_dir)
 
@@ -178,6 +187,7 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
             match_data = {
                 "rawDate": raw_date,
                 "date": data["date"],
+                "version": data["version"],
                 "map": data["map"],
                 "duration": data["duration"],
                 "gameMode": data["gameMode"],
@@ -296,10 +306,9 @@ def add_to_container_and_update_tables(paths: list[str], sorted_dict: SortedDict
                 hero_table[match_ban_id - 1]['gamesBanned'] += 1
 
             # updating player stats
-            # todo uncomment the following once it's working
 
-            # if p_stats is not None:
-            #     p_stats.process_new_match(match_data=match_data)
+            if p_stats is not None:
+                p_stats.process_new_match(match_data=match_data)
 
         with open(f"{recapper_dir}/hero_table.json", "w") as outfile:
             json.dump(hero_table, outfile)

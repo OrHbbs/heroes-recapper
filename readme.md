@@ -2,9 +2,16 @@
 
 Heroes Recapper is an offline replay tracker that has various features. This app currently is only compatible with windows.
 
+# Download
+
+To download and use Heroes Recapper, you can get the most recent release here: https://github.com/OrHbbs/heroes-recapper/releases/
+
+Unzip the file and open 'Heroes Recapper.exe' in order to launch the app.
+
+
 # Installation
 
-To build this app, download the repository, open terminal, navigate to the project's root directory, and paste and run the following line into terminal
+Alternatively, to build this app, download the repository, open terminal, navigate to the project's root directory, and paste and run the following line into terminal
 
 `pip install -r requirements.txt`
 
@@ -16,13 +23,9 @@ This will build the app into dist/Heroes Recapper. You can move this folder anyw
 
 Make sure you have python 3 installed. This app is created in python 3.11, so it may or may not work with earlier or later versions of python.
 
-# Download
-
-Alternatively, just download the most recent release here: https://github.com/OrHbbs/heroes-recapper/releases/
-
 # Known issues
 
-For installation, installing heroprotocol via pip only gets you up to version protocol91756.py.
+For installation, installing heroprotocol via pip only gets you up to version protocol91756.py
 
 # Notes
 

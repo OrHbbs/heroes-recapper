@@ -1,0 +1,1 @@
+pyinstaller --collect-data sv_ttk --add-data "heroes-talents/hero/*;heroes-talents/hero" --add-data "heroes-talents/images/heroes*;heroes-talents/images/heroes" --add-data "heroes-talents/images/talents*;heroes-talents/images/talents" --add-data "images/*;images" --noconfirm --name "Heroes Recapper" recapper_gui.py

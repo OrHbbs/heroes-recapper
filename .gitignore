@@ -4,3 +4,5 @@
 /test-dat/
 /test-data/
 /.idea/
+/test/
+/__pycache__/

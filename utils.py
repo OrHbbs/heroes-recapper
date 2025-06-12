@@ -13,10 +13,9 @@ default_wanted_keys = ['Deaths', 'TownKills', "SoloKill", 'Assists', "Level",
                        'Tier4Talent', 'Tier5Talent', 'Tier6Talent', 'Tier7Talent', 'DamageTaken', 'DamageSoaked',
                        'HighestKillStreak', 'ProtectionGivenToAllies', 'TimeSilencingEnemyHeroes',
                        'TimeRootingEnemyHeroes', 'TimeStunningEnemyHeroes', 'ClutchHealsPerformed',
-                       'EscapesPerformed',
-                       'TeamfightHealingDone', 'TeamfightDamageTaken', 'TeamfightHeroDamage', 'OnFireTimeOnFire',
-                       'TimeOnPoint', 'CageUnlocksInterrupted', 'PhysicalDamage', 'SpellDamage', 'Multikill',
-                       'MinionKills', 'RegenGlobes', 'TimeInTemple']
+                       'EscapesPerformed', 'TeamfightHealingDone', 'TeamfightDamageTaken', 'TeamfightHeroDamage',
+                       'OnFireTimeOnFire', 'TimeOnPoint', 'CageUnlocksInterrupted', 'PhysicalDamage', 'SpellDamage',
+                       'Multikill', 'MinionKills', 'RegenGlobes', 'TimeInTemple']
 
 essential_keys = ['Deaths', 'TownKills', "SoloKill", 'Assists', "Level", 'TeamTakedowns',
                   'ExperienceContribution', 'Healing', "SiegeDamage", 'MinionDamage', 'HeroDamage', 'MercCampCaptures',

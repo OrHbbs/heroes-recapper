@@ -100,7 +100,6 @@ def parse_battlelobby(battlelobby, players):
         if i == 5:
             party_num = 2
 
-
     if party_num >= 5:
         print("warning in parse_battlelobby, invalid party detected")
         print(players)
@@ -127,12 +126,26 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         battlelobby = mpyq.read_file('replay.server.battlelobby')
         bans = initdata['m_syncLobbyState']
 
-        # print(game_mode)
+        print(initdata['m_syncLobbyState']['m_gameDescription']['m_gameType'])
 
-        # not parsing customs for now
+        # for i in initdata['m_syncLobbyState']['m_gameDescription']['m_gameType']:
+        #     print(i)
+
+        # for i in initdata['m_syncLobbyState']:
+        #     for j in initdata['m_syncLobbyState'][i]:
+        #         print(j)
+
+        # for event in attribute_events:
+        #     print("Source:", event.get('source'))
+        #     print("MapNamespace:", event.get('mapNamespace'))
+        #     print("Scopes:", event.get('scopes'))
+        #     print("\n")
+
+        # parsing customs for now
         if game_mode is None:
-            print("not parsing customs for now")
-            return {}
+            print("parsing customs for now")
+            game_mode = -1
+            # return {}
 
         header = protocol.decode_replay_header(mpyq.header['user_data_header']['content'])
         build_number = header['m_version']['m_baseBuild']
@@ -145,10 +158,12 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
         player_list = details['m_playerList']
 
-        patch = (f"{header['m_version']['m_major']}."
-                 f"{header['m_version']['m_minor']}."
-                 f"{header['m_version']['m_revision']}."
-                 f"{header['m_version']['m_build']}")
+        # pprint.pp(player_list)
+
+        version = (f"{header['m_version']['m_major']}."
+                   f"{header['m_version']['m_minor']}."
+                   f"{header['m_version']['m_revision']}."
+                   f"{header['m_version']['m_build']}")
 
         del details['m_playerList']
 
@@ -158,19 +173,24 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
         output = {
             'rawDate': details['m_timeUTC'],
             'date': get_datetime(details['m_timeUTC'], timezone=timezone_offset),
+            'version': version,
             'map': get_as_str(details['m_title']),
             # 'winner': get_as_str(tracker_events),
             'gameMode': utils.game_mode_strings[game_mode],
             'duration': None,
             # 'firstToTen':
             # 'firstFort':
+            'draftOrder': ["", "", "", "", "", "", "", "", "", ""],
             'bansBlue': ["", "", ""],
             'bansRed': ["", "", ""],
             'firstPick': None,
-            'pickOrder': ""
         }
 
         players = []
+
+        team1 = []
+        team2 = []
+
         for player in player_list:
 
             for key, value in player.items():
@@ -181,10 +201,16 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
                 'name': player['m_name'],
                 'hero': player['m_hero'],
                 'result': player['m_result'],
-                # 'team': player['m_teamId']
+                'teamId': player['m_teamId']
             }
 
-            players.append(player_output)
+            # todo what happens if there are observers in the game? what teamId are they on, if they appear in the game?
+            team1.append(player_output) if player_output['teamId'] == 0 else team2.append(player_output)
+
+        players = team1 + team2
+
+        if len(players) < 10:
+            return {}
 
         parse_battlelobby(battlelobby, players)
 
@@ -194,7 +220,11 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
         # converting data to non-bytes
 
-        b_line = 0
+        current_line = 0
+
+        bans_blue_indices = [0, 12, 60]  # hero names are kept in the first line, and on every 6th line after that
+        bans_red_indices = [6, 18, 54]
+        draft_order_indices = [24, 30, 36, 42, 48, 66, 72, 78, 84, 90]
 
         for event in tracker_events:
 
@@ -203,30 +233,25 @@ def parse_replay(path: str, create_json: bool = True, check_duplicate: bool = Fa
 
             events_data.update(event)
 
-            if event['_event'] == 'NNet.Replay.Tracker.SHeroBannedEvent':
+            if event['_event'] in ['NNet.Replay.Tracker.SHeroBannedEvent', 'NNet.Replay.Tracker.SHeroPickedEvent']:
                 for vals in event:
-                    match b_line:
-                        case 0:  # hero name is kept the first line, and on every 6th line after that
-                            output["bansBlue"][0] = utils.get_shortname_by_altname(event[vals])
-                        case 1:  # second line is the team who banned the first hero, and subsequently the team with fp
-                            output["firstPick"] = (event[vals])
-                        case 6:
-                            output["bansRed"][0] = utils.get_shortname_by_altname(event[vals])
-                        case 12:
-                            output["bansBlue"][1] = utils.get_shortname_by_altname(event[vals])
-                        case 18:
-                            output["bansRed"][1] = utils.get_shortname_by_altname(event[vals])
-                        case 24:
-                            output["bansRed"][2] = utils.get_shortname_by_altname(event[vals])
-                        case 30:
-                            output["bansBlue"][2] = utils.get_shortname_by_altname(event[vals])
+                    line_value = utils.get_shortname_by_altname(event[vals])
 
-                    b_line += 1
+                    if current_line in bans_blue_indices:
+                        output["bansBlue"][bans_blue_indices.index(current_line)] = line_value
+                    elif current_line in bans_red_indices:
+                        output["bansRed"][bans_red_indices.index(current_line)] = line_value
+                    elif current_line in draft_order_indices:
+                        output["draftOrder"][draft_order_indices.index(current_line)] = line_value
+                    elif current_line == 1:
+                        output["firstPick"] = line_value
+
+                    current_line += 1
 
         game_stats = get_player_data(events_data, len(player_list))
 
         # todo game time is different on heroesprofile and stats of the storm, which one is correct?
-        output['duration'] = game_stats['duration']
+        output['duration'] = game_stats['duration']  # in seconds
 
         for i in range(len(player_list)):
             output['players'][i].update(game_stats['player_details'][i])
